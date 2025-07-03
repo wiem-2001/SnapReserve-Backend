@@ -1,0 +1,27 @@
+{
+  "name": "snapreserve-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.0.1",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.0",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "eslint": "^9.30.1",
+    "nodemon": "^3.1.10"
+  },
+  "type": "module"
+}
