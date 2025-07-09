@@ -14,19 +14,53 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                    Int       @id @default(autoincrement())
-  full_name             String?
-  email                 String    @unique
-  password_hash         String?   // nullable in DB
-  phone                 String?   // nullable in DB
-  role                  String
-  created_at            DateTime? @default(now())
-  updated_at            DateTime? @updatedAt
-  verification_token    String?   @db.Text
-  is_verified           Boolean?  @default(false)
-  password_reset_token  String?
+model users {
+  id                     String    @id @default(cuid())
+  full_name              String?
+  email                  String    @unique
+  password_hash          String? 
+  phone                  Int? 
+  role                   String
+  created_at             DateTime? @default(now())
+  updated_at             DateTime? @updatedAt
+  verification_token     String?   @db.Text
+  is_verified            Boolean?  @default(false)
+  password_reset_token   String?
   password_reset_expires DateTime?
-  google_id             String?
-  facebook_id           String?
+  google_id              String?
+  facebook_id            String?
+  events                 events[]
+}
+
+model events {
+  id          String           @id @default(cuid())
+  title       String
+  category    String
+  description String
+  image       String
+  maxCapacity Int
+  ownerId     String
+  owner       users             @relation(fields: [ownerId], references: [id])
+
+  dates        eventDate[]      
+  pricingTiers pricingTier[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model eventDate {
+  id       String   @id @default(cuid())
+  date     DateTime
+  location String
+  eventId  String
+  event    events    @relation(fields: [eventId], references: [id] , onDelete: Cascade)
+}
+
+model pricingTier {
+  id      String @id @default(cuid())
+  name    String
+  price   Float
+  eventId String
+  event   events  @relation(fields: [eventId], references: [id] , onDelete: Cascade)
 }

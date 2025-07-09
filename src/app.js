@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import authRoutes from './routes/authRoutes.js';
 import cookieParser from 'cookie-parser';
+import eventRoutes from './routes/eventRoutes.js'
 
 const app = express();
 
@@ -18,7 +19,7 @@ app.use(cors({
 }));
 
 app.use('/api/auth', authRoutes);
-
+app.use('/api/event',eventRoutes);
 app.get('/', (req, res) => {
   res.send('SnapReserve Backend is running!');
 });
