@@ -19,12 +19,3 @@ export const signupValidator = [
   body('role')
     .notEmpty().withMessage('Role is required')
 ];
-
-export const signinValidator = [
-  body('email')
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('Invalid email format'),
-
-  body('password')
-    .notEmpty().withMessage('Password is required'),
-];

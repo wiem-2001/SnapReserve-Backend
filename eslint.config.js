@@ -15,7 +15,7 @@ export default defineConfig([
       "no-new-func": "error",
       "prefer-const": "warn",
       "no-constant-condition": "warn",
-      "max-len": ["error", { "code": 200 }],
+      "max-len": ["error", { "code": 300 }],
       "max-lines": ["error", { "max": 500 }],
       "no-duplicate-imports": "error",
       

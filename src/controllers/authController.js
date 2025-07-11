@@ -5,6 +5,7 @@ import {
   findUserByEmail,
   findUserById,
   findUserByVerificationToken,
+  updatedUserImageProfile,
   updateUserVerification,
   updateUserVerificationToken,
   savePasswordResetToken,
@@ -13,7 +14,9 @@ import {
   findUserByGoogleId,
   findUserByFacebookId,
   updateUserWithGoogleId,
-  updateUserWithFacebookId
+  updateUserWithFacebookId,
+  updateUserProfile,
+  findPasswordByUserId
 } from '../models/UserModel.js';
 import jwt from 'jsonwebtoken';
 import { sendVerificationEmail, sendResetPasswordEmail } from '../utils/mailer.js';
@@ -99,13 +102,17 @@ export const verifyEmail = async (req, res) => {
 export const signin = async (req, res) => {
   const { email, password } = req.body;
 
+  if (!email || !password) {
+    return res.status(401).json({ message: 'Please fill in both email and password.' });
+  }
+
   try {
     const user = await findUserByEmail(email);
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password_hash);
+    const isMatch = bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -149,8 +156,9 @@ export const requestPasswordReset = async (req, res) => {
 
   try {
     const user = await findUserByEmail(email);
+    const user_name = user.full_name
     if (!user) {
-      return res.status(404).json({ message: 'Email not found' });
+      return res.status(404).json({ message: 'No account found with that email.' });
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
@@ -164,7 +172,7 @@ export const requestPasswordReset = async (req, res) => {
       to: user.email,
       subject: 'Password Reset Request',
       text: `Click here to reset your password: ${resetUrl}`,
-      user: user,
+      user: user_name,
       resetUrl: resetUrl
     });
 
@@ -206,18 +214,97 @@ export const logout = (req, res) => {
   res.status(200).json({ message: 'Logged out successfully' });
 };
 
-export const getMe = (req, res) => {
-  if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
+export const getMe = async (req, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
 
-  res.status(200).json({
-    user: req.user,
-    message: 'User authenticated'
-  });
+    const user = await findUserById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.status(200).json({
+      user,
+      message: 'User authenticated'
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
 };
 
-// OAuth Strategies
+export const uploadProfileImage = async (req, res) => {
+  const filename = req.file?.filename;
+  const userId = req.user.id ;
+
+  if (!filename) {
+    return res.status(400).json({ error: 'No image file uploaded' });
+  }
+  try {
+    const updatedUserProfile = await updatedUserImageProfile(userId,filename)
+    
+    res.json({
+      message: 'Profile image uploaded successfully',
+      imageUrl: `/${filename}`,
+      user: updatedUserProfile,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id; 
+    const { fullName, phone, gender, birth_date } = req.body;
+    if (!fullName) {
+      return res.status(400).json({ message: 'Full Name is required' });
+    }
+    const updatedUser = await updateUserProfile(userId, { fullName, phone, gender, birth_date });
+
+    res.json({ user: updatedUser });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+export const updateUserPassword = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ message: 'All fields are required.' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: 'Passwords do not match.' });
+    }
+
+    const userPasswordObj = await findPasswordByUserId(userId);
+
+    if (!userPasswordObj || !userPasswordObj.password_hash) {
+      return res.status(404).json({ message: 'User password not found' });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, userPasswordObj.password_hash);
+
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Current password is incorrect.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await updatePassword(userId, hashedPassword);
+
+    res.status(200).json({ message: 'Password updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,

@@ -25,6 +25,35 @@ export const findUserById = async (id) => {
     where: { id }
   });
 };
+export const updatedUserImageProfile = async (userId,fileName) => {
+  const imagePath = `/uploads/${fileName}`;
+  return prisma.users.update({
+      where: { id: userId },
+      data: {
+        profile_image: imagePath,
+      },
+    });
+} 
+export const updateUserProfile = async (userId, {fullName, phone, gender, birth_date} ) => {
+  return await prisma.users.update({
+    where: { id: userId },
+    data: {
+      full_name: fullName,
+      phone: phone || null,
+      gender: gender || null,
+      birth_date: birth_date ? new Date(birth_date) : null,
+      updated_at: new Date(),
+    },
+    select: {
+      id: true,
+      full_name: true,
+      email: true,
+      phone: true,
+      gender: true,
+      birth_date: true,
+    }
+  });
+};
 
 export const findUserByVerificationToken = async (token) => {
   return prisma.users.findFirst({
@@ -67,7 +96,12 @@ export const updatePassword = async (userId, hashedPassword) => {
     }
   });
 };
-
+export const findPasswordByUserId=async(userId) => {
+return prisma.users.findUnique({
+  where: { id: userId },
+  select: { password_hash: true, }
+});
+} 
 export const clearResetToken = async (userId) => {
   return prisma.users.update({
     where: { id: userId },

@@ -19,7 +19,7 @@ model users {
   full_name              String?
   email                  String    @unique
   password_hash          String? 
-  phone                  Int? 
+  phone                  String? 
   role                   String
   created_at             DateTime? @default(now())
   updated_at             DateTime? @updatedAt
@@ -30,6 +30,10 @@ model users {
   google_id              String?
   facebook_id            String?
   events                 events[]
+  profile_image          String? 
+  gender                 String?
+  birth_date             DateTime?
+
 }
 
 model events {
