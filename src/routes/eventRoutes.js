@@ -12,7 +12,7 @@ router.delete('/delete-event/:id', verifyToken, eventController.deleteEvent);
 
 router.get('/getall-events/', eventController.getAllEvents);
 
-router.get('/get-event/owner', verifyToken, eventController.getEventsByOwner);
+router.get('/get-events/owner', verifyToken, eventController.getEventsByOwner);
 
 router.get('/get-event/:id', verifyToken, eventController.getEventById);
 

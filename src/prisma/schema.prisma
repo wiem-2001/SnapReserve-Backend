@@ -33,38 +33,63 @@ model users {
   profile_image          String? 
   gender                 String?
   birth_date             DateTime?
+  tickets                Ticket[]
 
 }
 
 model events {
-  id          String           @id @default(cuid())
-  title       String
-  category    String
-  description String
-  image       String
-  maxCapacity Int
-  ownerId     String
-  owner       users             @relation(fields: [ownerId], references: [id])
+  id            String           @id @default(cuid())
+  title         String
+  category      String
+  description   String
+  image         String
+  ownerId       String
+  owner         users           @relation(fields: [ownerId], references: [id])
 
-  dates        eventDate[]      
-  pricingTiers pricingTier[]
+  dates         eventDate[]      
+  pricingTiers  pricingTier[]
+  tickets       Ticket[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 }
 
 model eventDate {
-  id       String   @id @default(cuid())
-  date     DateTime
-  location String
-  eventId  String
-  event    events    @relation(fields: [eventId], references: [id] , onDelete: Cascade)
+  id            String   @id @default(cuid())
+  date          DateTime
+  location      String
+  eventId       String
+  event         events    @relation(fields: [eventId], references: [id] , onDelete: Cascade)
 }
 
 model pricingTier {
-  id      String @id @default(cuid())
-  name    String
-  price   Float
-  eventId String
-  event   events  @relation(fields: [eventId], references: [id] , onDelete: Cascade)
+  id            String    @id @default(cuid())
+  name          String
+  price         Float
+  capacity      Int       
+  eventId       String
+  event         events    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets       Ticket[]
 }
+
+model Ticket {
+  id              String        @id @default(uuid())
+  user            users         @relation(fields: [userId], references: [id])
+  userId          String
+
+  event           events        @relation(fields: [eventId], references: [id])
+  eventId         String
+
+  tier            pricingTier   @relation(fields: [tierId], references: [id])
+  tierId          String
+
+  date            DateTime
+  stripeSessionId String?
+
+  qrCodeUrl       String?
+  pdfUrl          String?
+
+  createdAt       DateTime      @default(now())
+}
+
+

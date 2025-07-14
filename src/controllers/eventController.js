@@ -7,7 +7,7 @@ export async function createEvent(req, res) {
     if (!filename) {
     return res.status(400).json({ error: 'No image file uploaded' });
   }
-  const requiredFields = ['title', 'category', 'description', 'maxCapacity'];
+  const requiredFields = ['title', 'category', 'description'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
     
     if (missingFields.length > 0) {
@@ -22,7 +22,6 @@ export async function createEvent(req, res) {
       title: req.body.title,
       category: req.body.category,
       description: req.body.description,
-      maxCapacity: Number(req.body.maxCapacity),
       ownerId,
       image: `/uploads/${filename}`,
       dates,
@@ -42,7 +41,7 @@ export async function editEvent(req, res) {
     const ownerId = req.user.id;
     const { id } = req.params;
 
-    const requiredFields = ['title', 'category', 'description', 'maxCapacity'];
+    const requiredFields = ['title', 'category', 'description'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
     
     if (missingFields.length > 0) {
@@ -57,7 +56,6 @@ export async function editEvent(req, res) {
       title: req.body.title,
       category: req.body.category,
       description: req.body.description,
-      maxCapacity: Number(req.body.maxCapacity),
       dates,
       pricingTiers,
     };

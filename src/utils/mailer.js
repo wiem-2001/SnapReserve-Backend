@@ -107,3 +107,7 @@ export const sendResetPasswordEmail = async ({ to, subject, text, user, resetUrl
 
   await transporter.sendMail(mailOptions);
 };
+
+export const  sendTicketEmail = async (req,res) => {
+  
+}

@@ -7,8 +7,11 @@ import cookieParser from 'cookie-parser';
 import eventRoutes from './routes/eventRoutes.js'
 import path from 'path';
 import { fileURLToPath } from 'url';
-
+import ticketRoutes from './routes/ticketRoutes.js'
+import { handleStripeWebhook } from './controllers/ticketController.js';
 const app = express();
+
+app.post('/api/tickets/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
 app.use(helmet());
 app.use(express.json());
@@ -27,6 +30,8 @@ app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/auth', authRoutes);
 
 app.use('/api/event',eventRoutes);
+app.use('/api/tickets',ticketRoutes);
+
 app.get('/', (req, res) => {
   res.send('SnapReserve Backend is running!');
 });

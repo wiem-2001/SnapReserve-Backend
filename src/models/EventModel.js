@@ -7,7 +7,6 @@ export async function createEvent(data) {
     category,
     description,
     image,
-    maxCapacity,
     ownerId,
     dates,
     pricingTiers,
@@ -19,7 +18,6 @@ export async function createEvent(data) {
       category,
       description,
       image,
-      maxCapacity: Number(maxCapacity),
       ownerId,
       dates: {
         create: dates.map(({ date, location }) => ({
@@ -28,9 +26,10 @@ export async function createEvent(data) {
         })),
       },
       pricingTiers: {
-        create: pricingTiers.map(({ name, price }) => ({
+        create: pricingTiers.map(({ name, price ,capacity}) => ({
           name,
           price: parseFloat(price),
+          capacity: Number(capacity),
         })),
       },
     },
@@ -47,7 +46,6 @@ export async function editEvent(id, ownerId, data) {
     category,
     description,
     image,
-    maxCapacity,
     dates,
     pricingTiers,
   } = data;
@@ -65,7 +63,6 @@ export async function editEvent(id, ownerId, data) {
     category,
     description,
     image,
-    maxCapacity: Number(maxCapacity),
     updatedAt: new Date(),
   };
 
@@ -82,9 +79,10 @@ export async function editEvent(id, ownerId, data) {
   if (Array.isArray(pricingTiers)) {
     await prisma.pricingTier.deleteMany({ where: { eventId: id } });
     updateData.pricingTiers = {
-      create: pricingTiers.map(({ name, price }) => ({
+      create: pricingTiers.map(({ name, price ,capacity}) => ({
         name,
         price: parseFloat(price),
+        capacity: Number(capacity),
       })),
     };
   }
