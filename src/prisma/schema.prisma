@@ -90,6 +90,7 @@ model Ticket {
   pdfUrl          String?
 
   createdAt       DateTime      @default(now())
+  uuid            String   @unique
 }
 
 

@@ -108,6 +108,104 @@ export const sendResetPasswordEmail = async ({ to, subject, text, user, resetUrl
   await transporter.sendMail(mailOptions);
 };
 
-export const  sendTicketEmail = async (req,res) => {
-  
-}
+export const sendTicketEmail = async ({ to, userName, tickets, orderId, orderDate, totalAmount }) => {
+  const ticketsHtml = tickets.map(ticket => {
+    const qrBlocks = ticket.qrCodeUrls.map((url, index) => `
+      <div style="margin:10px 0; padding:15px;">
+     
+        <div style="margin-bottom:15px; border-bottom:1px solid #f0f0f0; padding-bottom:10px;">
+          <h3 style="margin:0 0 5px 0; color:#021529;">${ticket.eventTitle}</h3>
+          <p style="margin:3px 0; font-size:14px;">
+            <strong>Date:</strong> ${new Date(ticket.eventDate).toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </p>
+          <p style="margin:3px 0; font-size:14px;">
+            <strong>Location:</strong> ${ticket.eventLocation}
+          </p>
+        </div>
+       
+        <div style="margin-bottom:10px;">
+          <p style="margin:5px 0; font-weight:bold; font-size:16px;">
+            ${ticket.tierName} Ticket
+          </p>
+          <p style="margin:5px 0; font-size:14px;">
+            <strong>Price:</strong> $${ticket.price.toFixed(2)}
+          </p>
+        </div>
+        
+        <div style="text-align:center; margin:15px 0;">
+          <pre style="font-family:monospace; line-height:1; margin:10px auto; color:#021529; font-size:8px; white-space:pre-wrap; display:inline-block;">
+${ticket.asciiQRs[index]}
+          </pre>
+          <img src="${url}" alt="QR Code" width="150" 
+               style="display:block; margin:10px auto; border:1px solid #ddd;"
+               onerror="this.style.display='none'"/>
+        </div>
+     
+        <div style="font-size:12px; color:#666; text-align:center;">
+          <p style="margin:5px 0;">
+            <strong>Ticket ID:</strong> ${ticket.ticketIds[index]}
+          </p>
+          <p style="margin:5px 0;">
+            <a href="${ticket.textUrls[index]}" style="color:#0066cc;">View ticket online</a>
+          </p>
+        </div>
+      </div>
+    `).join('');
+
+    return `
+      <div style="border:1px solid #ddd; margin-bottom:20px; padding:0; border-radius:6px; overflow:hidden;">
+        <div style="padding:15px;">
+          ${qrBlocks}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const mailOptions = {
+    from: `"SnapReserve" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `Your SnapReserve Tickets`,
+    html: `
+      <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #021529; padding: 20px; text-align: center;">
+          <h1 style="color: #ffd72d; margin: 0;">SnapReserve</h1>
+        </div>
+        <div style="padding: 20px; background-color: #ffffff;">
+          <h2 style="color: #021529;">Hello, ${userName}</h2>
+          <p>Thank you for your purchase on <strong>${orderDate.toLocaleDateString()}</strong>.</p>
+          <p style="margin-bottom: 0;">
+            Below are your digital tickets. Each ticket includes:
+          </p>
+          <ul style="margin-top: 8px; padding-left: 20px;">
+            <li>A scannable QR code for entry</li>
+            <li>Event details (date, location)</li>
+            <li>Ticket type and unique ID</li>
+          </ul>
+          ${ticketsHtml}
+          <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p style="font-weight: bold; font-size: 16px; color: #021529; text-align: right;">
+              Total Paid: $${totalAmount.toFixed(2)}
+            </p>
+          </div>
+        </div>
+        <div style="background-color: #f5f5f5; padding: 10px; text-align: center; font-size: 12px; color: #999;">
+          &copy; ${new Date().getFullYear()} SnapReserve. All rights reserved.
+        </div>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    console.error('Failed to send ticket email:', error);
+    throw error;
+  }
+};
