@@ -37,10 +37,8 @@ export async function createEvent(req, res) {
 
 export async function editEvent(req, res) {
   try {
-    const filename = req.file?.filename;
     const ownerId = req.user.id;
     const { id } = req.params;
-
     const requiredFields = ['title', 'category', 'description'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
     
@@ -50,29 +48,45 @@ export async function editEvent(req, res) {
         fields: missingFields 
       });
     }
+
     const dates = req.body.dates ? JSON.parse(req.body.dates) : [];
     const pricingTiers = req.body.pricingTiers ? JSON.parse(req.body.pricingTiers) : [];
+    let imagePath;
+    if (req.file) {
+ 
+      imagePath = `/uploads/${req.file.filename}`;
+    } else if (req.body.image) {
+      imagePath = req.body.image;
+    }
+
     const updateData = {
       title: req.body.title,
       category: req.body.category,
       description: req.body.description,
       dates,
-      pricingTiers,
+      pricingTiers
     };
-    if (filename) {
-      updateData.image = `/uploads/${filename}`;
+    if (imagePath !== undefined) {
+      updateData.image = imagePath;
     }
-    const result = await eventModel.editEvent(id, ownerId, updateData);
-    if (result.count === 0) {
+
+    const updatedEvent = await eventModel.editEvent(id, ownerId, updateData);
+    
+    if (!updatedEvent) {
       return res.status(404).json({ error: 'Event not found or not owned by you' });
     }
 
-    res.json({ 
+    res.json({
       message: 'Event updated successfully',
-      updatedEvent: result.updatedEvent 
+      updatedEvent
     });
+
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update event' });
+    console.error('Error updating event:', error);
+    res.status(500).json({ 
+      error: 'Failed to update event',
+      details: error.message 
+    });
   }
 }
 
@@ -94,9 +108,12 @@ export async function deleteEvent(req, res) {
 
 export async function getAllEvents(req, res) {
   try {
-    const events = await eventModel.getAllEvents();
-    res.json(events);
+    const filters = req.query;
+    const events = await eventModel.getAllEventByFilter(filters);
+    console.log("eventssss",events)
+    res.status(200).json(events);
   } catch (error) {
+    console.error('Error fetching events:', error);
     res.status(500).json({ error: 'Failed to get events' });
   }
 }
@@ -104,9 +121,16 @@ export async function getAllEvents(req, res) {
 export async function getEventsByOwner(req, res) {
   try {
     const ownerId = req.user.id;
-    const events = await eventModel.getEventsByOwnerId(ownerId);
+    const { keyword, category, dateRange } = req.query;
+    const events = await eventModel.getEventsByOwnerIdWithFilters(ownerId, {
+      keyword,
+      category,
+      dateRange,
+    });
+
     res.json(events);
   } catch (error) {
+    console.error('Error fetching owner events:', error);
     res.status(500).json({ error: 'Failed to get your events' });
   }
 }

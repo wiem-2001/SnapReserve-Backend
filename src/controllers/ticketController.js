@@ -1,11 +1,11 @@
-import { create, findOneTicket ,findTicketsBySessionId} from '../models/TicketModel.js';
+import { create ,findTicketsBySessionId,getAllTickets} from '../models/TicketModel.js';
+import {findTicketsById,reduceCapacity , findTier} from '../models/PricingTier.js';
+import {findUserById} from '../models/UserModel.js';
+import { getEventById } from '../models/EventModel.js';
 import { stripe } from '../utils/stripe.js';
 import { sendTicketEmail } from '../utils/mailer.js';
-import { prisma } from '../utils/prisma.js';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
-import fs from 'fs/promises';
-import path from 'path';
 import qrcodeTerminal from 'qrcode-terminal';
 
 export const createCheckoutSession = async (req, res) => {
@@ -14,24 +14,14 @@ export const createCheckoutSession = async (req, res) => {
 
   try {
     const validationPromises = tierQuantities.map(async ({ tierId, quantity }) => {
-      const tier = await prisma.pricingTier.findUnique({
-        where: { id: tierId },
-        include: {
-          _count: {
-            select: { tickets: true }
-          }
-        }
-      });
-
+      const tier = await findTicketsById(tierId)
       if (!tier) {
         throw new Error(`Tier ${tierId} not found`);
       }
-
       const availableTickets = tier.capacity - tier._count.tickets;
       if (availableTickets < quantity) {
         throw new Error(`Only ${availableTickets} tickets available for tier ${tier.name}`);
       }
-
       return {
         tier,
         quantity
@@ -121,17 +111,9 @@ export const handleStripeWebhook = async (req, res) => {
       const tiers = JSON.parse(tierQuantities);
       
       try {
-        const user = await prisma.users.findUnique({
-          where: { id: userId },
-          select: { email: true, full_name: true },
-        });
+        const user = await findUserById(userId);
         if (!user) {throw new Error('User not found');}
-        const event = await prisma.events.findUnique({
-          where: { id: eventId },
-          include: {
-            dates: true
-          }
-        });
+        const event = await getEventById(eventId);
 
         if (!event) {throw new Error('Event not found');}
         const eventDate = event.dates[0];
@@ -140,30 +122,18 @@ export const handleStripeWebhook = async (req, res) => {
         const ticketsMap = new Map();
 
         for (const { tierId, quantity } of tiers) {
-          const tier = await prisma.pricingTier.findUnique({
-            where: { id: tierId }
-          });
+          const tier = await findTier(tierId);
+
+          await reduceCapacity(tier.id);
 
           if (!tier) {throw new Error('Pricing tier not found');}
 
           for (let i = 0; i < quantity; i++) {
             const ticketUUID = uuidv4();
             const { pngUrl, asciiQR, textUrl } = await generateQrCodeData(ticketUUID);
+            const stripeSessionId = session.id;
 
-            const ticket = await prisma.ticket.create({
-              data: {
-                eventId,
-                tierId,
-                date: new Date(date),
-                userId,
-                stripeSessionId: session.id,
-                uuid: ticketUUID,
-                qrCodeUrl: pngUrl 
-              },
-              include: {
-                tier: true
-              }
-            });
+            const ticket = await create (eventId, tierId, date, userId, stripeSessionId,ticketUUID,pngUrl) ;
             if (!ticketsMap.has(tierId)) {
               ticketsMap.set(tierId, {
                 tierName: tier.name,
@@ -207,7 +177,6 @@ export const handleStripeWebhook = async (req, res) => {
       }
     }
   }
-
   res.json({ received: true });
 };
 
@@ -216,26 +185,7 @@ export const getOrderDetails = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const tickets = await prisma.ticket.findMany({
-      where: {
-        stripeSessionId: sessionId,
-        userId: userId
-      },
-      include: {
-        tier: true,
-        event: {
-          include: {
-            dates: true,
-            owner: {
-              select: {
-                full_name: true,
-                email: true
-              }
-            }
-          }
-        }
-      }
-    });
+    const tickets = await findTicketsBySessionId(sessionId,userId);
 
     if (tickets.length === 0) {
       return res.status(404).json({ error: 'No tickets found for this order.' });
@@ -293,3 +243,34 @@ export const getOrderDetails = async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+export const getAllTicketsByUserIdGroupByCreatedDate = async (req,res) => {
+  try {
+     const userId  = req.user.id;
+      if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    const tickets = await getAllTickets(userId.stringify);
+    const result = {};
+    
+    tickets.forEach(ticket => {
+      const year = new Date(ticket.createdAt).getFullYear();
+      if (!result[year]) {
+        result[year] = [];
+      }
+      result[year].push(ticket);
+    });
+
+    const descendingYears = Object.keys(result).sort((a, b) => b - a);
+    const finalResult = {};
+    
+    descendingYears.forEach(year => {
+      finalResult[year] = result[year];
+    });
+
+      res.status(200).json(finalResult);
+  } catch (error) {
+   console.error('Error fetching tickets:', error);
+     res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
+}

@@ -156,10 +156,10 @@ export const requestPasswordReset = async (req, res) => {
 
   try {
     const user = await findUserByEmail(email);
-    const user_name = user.full_name
     if (!user) {
       return res.status(404).json({ message: 'No account found with that email.' });
     }
+    const user_name = user.full_name
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 3600000);

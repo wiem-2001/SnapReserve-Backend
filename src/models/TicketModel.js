@@ -24,12 +24,38 @@ export const findOneTicket = async (tierId) => {
 
 export const findTicketsBySessionId =async (sessionId,userId) => {
     return await prisma.ticket.findMany({
-    where: {
-      stripeSessionId: sessionId,
-      userId: userId
-    },
-    include: {
-      tier: true
+      where: {
+        stripeSessionId: sessionId,
+        userId: userId
+      },
+      include: {
+        tier: true,
+        event: {
+          include: {
+            dates: true,
+            owner: {
+              select: {
+                full_name: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+export const getAllTickets = async (userId) =>{
+  return await prisma.ticket.findMany({
+      where: {
+        userId: userId
+      },
+      include: {
+       event: {
+        include: {
+          dates: true 
+        }
+      },
+       tier: true,
     }
-  });
+    });
 }

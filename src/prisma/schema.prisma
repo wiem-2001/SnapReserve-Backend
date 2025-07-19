@@ -69,7 +69,7 @@ model pricingTier {
   capacity      Int       
   eventId       String
   event         events    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  tickets       Ticket[]
+  tickets       Ticket[]  
 }
 
 model Ticket {
@@ -80,7 +80,7 @@ model Ticket {
   event           events        @relation(fields: [eventId], references: [id])
   eventId         String
 
-  tier            pricingTier   @relation(fields: [tierId], references: [id])
+  tier            pricingTier   @relation(fields: [tierId], references: [id],onDelete: Cascade)
   tierId          String
 
   date            DateTime

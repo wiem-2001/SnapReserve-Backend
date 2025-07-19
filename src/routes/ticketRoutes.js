@@ -6,5 +6,6 @@ const router = express.Router();
 
 router.post('/create-checkout-session', verifyToken, ticketController.createCheckoutSession);
 router.get('/orders/:sessionId', verifyToken, ticketController.getOrderDetails);
+router.get('/:userId', verifyToken,ticketController.getAllTicketsByUserIdGroupByCreatedDate);
 
 export default router;
