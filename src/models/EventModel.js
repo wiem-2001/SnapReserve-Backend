@@ -104,6 +104,8 @@ export async function getAllEventByFilter(filters) {
     dateRange = dateRange.split(',');
   }
 
+  const today = new Date();
+
   const where = {
     ...(keyword && {
       title: {
@@ -115,15 +117,27 @@ export async function getAllEventByFilter(filters) {
 
     dates: {
       some: {
+        date: {
+          gte: today,
+        },
         ...(dateRange && dateRange.length === 2 && {
-          date: {
-            gte: new Date(dateRange[0]),
-            lte: new Date(dateRange[1]),
-          },
+          AND: [
+            {
+              date: {
+                gte: new Date(dateRange[0]),
+              },
+            },
+            {
+              date: {
+                lte: new Date(dateRange[1]),
+              },
+            },
+          ],
         }),
       },
     },
   };
+
   return prisma.events.findMany({
     where,
     include: {
