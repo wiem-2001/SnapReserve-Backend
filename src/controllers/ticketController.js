@@ -3,7 +3,7 @@ import {findTicketsById,reduceCapacity , findTier} from '../models/PricingTier.j
 import {findUserById} from '../models/UserModel.js';
 import { getEventById } from '../models/EventModel.js';
 import { stripe } from '../utils/stripe.js';
-import { sendTicketEmail } from '../utils/mailer.js';
+import { sendTicketEmail , sendSuspiciousActivityEmail } from '../utils/mailer.js';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
@@ -61,6 +61,9 @@ export const createCheckoutSession = async (req, res) => {
       const prediction = predictionRes.data.prediction;
 
       if (prediction === -1) {
+        if (req.user.email) {
+          await sendSuspiciousActivityEmail(req.user.email);
+        }
         return res.status(403).json({
           error: "Suspicious activity detected. Transaction blocked. Please contact support."
         });

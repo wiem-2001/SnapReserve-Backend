@@ -209,3 +209,32 @@ ${ticket.asciiQRs[index]}
     throw error;
   }
 };
+
+export const sendSuspiciousActivityEmail = async (to) => {
+
+  const mailOptions = {
+    from: `"SnapReserve" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: 'Suspicious Activity Detected on Your SnapReserve Account',
+    html: `
+      <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #021529; padding: 20px; text-align: center;">
+          <h1 style="color: #ffd72d; margin: 0;">SnapReserve</h1>
+        </div>
+
+        <div style="padding: 20px; background-color: #ffffff;">
+          <h2 style="color: #d93025;">Your Transaction Was Blocked</h2>
+          <p>We’ve detected potentially suspicious activity on your account and have blocked your recent attempt to reserve tickets as a precaution.</p>
+
+          <p>If you believe this was a mistake, please contact our support team so we can verify and assist you further.</p>
+          <p style="margin-top: 40px; color: #888;">We’re here to help,<br/>The SnapReserve Team</p>
+        </div>
+        <div style="background-color: #f5f5f5; padding: 10px; text-align: center; font-size: 12px; color: #999;">
+          &copy; ${new Date().getFullYear()} SnapReserve. All rights reserved.
+        </div>
+      </div>
+    `
+  };
+
+  return transporter.sendMail(mailOptions);
+};
