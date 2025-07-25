@@ -59,3 +59,31 @@ export const getAllTickets = async (userId) =>{
     }
     });
 }
+
+export const getLastUserTicket = async (userId) => {
+  return await prisma.ticket.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' }
+  });
+};
+export const countFailedAttemptsForUser = async (userId, hours = 24) => {
+  return await prisma.failedPaymentAttempt.count({
+    where: {
+      userId,
+      createdAt: {
+        gte: new Date(Date.now() - hours * 60 * 60 * 1000)
+      }
+    }
+  });
+};
+
+export const createFailedAttempt = async ({ userId, eventId, intent }) => {
+  return await prisma.failedPaymentAttempt.create({
+    data: {
+      userId,
+      eventId,
+      sessionId: intent.id,
+      reason: intent.last_payment_error?.message || "Unknown payment failure"
+    }
+  });
+};

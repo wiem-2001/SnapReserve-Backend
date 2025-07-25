@@ -1,0 +1,7 @@
+fastapi        # Web framework to create the API
+uvicorn        # ASGI server to run the FastAPI app
+scikit-learn   # Provides OneClassSVM and other ML models, and handles prediction logic
+numpy          # For array manipulation and reshaping input data for the models
+joblib         # For loading serialized (pickled) model files saved using joblib
+pydantic       # For validating and parsing request bodies in FastAPI using Python type hints
+pandas

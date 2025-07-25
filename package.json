@@ -9,16 +9,21 @@
     "prepare": "husky install",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "prisma": "prisma --schema=src/prisma/schema.prisma",
     "prisma:generate": "prisma generate --schema=src/prisma/schema.prisma",
     "postinstall": "prisma generate --schema=src/prisma/schema.prisma"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js",
+    "schema": "src/prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@faker-js/faker": "^9.9.0",
     "@prisma/client": "^6.11.1",
+    "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "canvas": "^3.1.2",
     "cookie-parser": "^1.4.7",

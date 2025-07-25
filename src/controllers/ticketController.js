@@ -1,4 +1,4 @@
-import { create ,findTicketsBySessionId,getAllTickets} from '../models/TicketModel.js';
+import { create ,findTicketsBySessionId,getAllTickets ,getLastUserTicket,countFailedAttemptsForUser ,createFailedAttempt} from '../models/TicketModel.js';
 import {findTicketsById,reduceCapacity , findTier} from '../models/PricingTier.js';
 import {findUserById} from '../models/UserModel.js';
 import { getEventById } from '../models/EventModel.js';
@@ -7,42 +7,68 @@ import { sendTicketEmail } from '../utils/mailer.js';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
+import axios from 'axios';
+
+export const getAvailableTierWithQuantity = async (tierId) => {
+  const tier = await findTicketsById(tierId);
+  if (!tier) {throw new Error(`Tier ${tierId} not found`);}
+  
+  const availableTickets = tier.capacity - tier._count.tickets;
+  return { tier, availableTickets };
+};
 
 export const createCheckoutSession = async (req, res) => {
   const { eventId, tierQuantities, date } = req.body; 
   const userId = req.user.id;
 
   try {
-    const validationPromises = tierQuantities.map(async ({ tierId, quantity }) => {
-      const tier = await findTicketsById(tierId)
-      if (!tier) {
-        throw new Error(`Tier ${tierId} not found`);
-      }
-      const availableTickets = tier.capacity - tier._count.tickets;
+    const validatedTiers = await Promise.all(tierQuantities.map(async ({ tierId, quantity }) => {
+      const { tier, availableTickets } = await getAvailableTierWithQuantity(tierId);
       if (availableTickets < quantity) {
         throw new Error(`Only ${availableTickets} tickets available for tier ${tier.name}`);
       }
-      return {
-        tier,
-        quantity
-      };
-    });
+      return { tier, quantity };
+    }));
 
-    const validatedTiers = await Promise.all(validationPromises);
     const line_items = validatedTiers.map(({ tier, quantity }) => ({
       price_data: {
         currency: 'usd',
         product_data: {
           name: `${tier.name} Ticket - ${new Date(date).toLocaleDateString()}`,
-          metadata: {
-            eventId,
-            date,
-          },
+          metadata: { eventId, date }
         },
-        unit_amount: Math.round(tier.price * 100), 
+        unit_amount: Math.round(tier.price * 100),
       },
-      quantity: quantity,
+      quantity,
     }));
+
+    const totalAmount = validatedTiers.reduce((sum, { tier, quantity }) => sum + tier.price * quantity, 0);
+    const totalQuantity = tierQuantities.reduce((sum, t) => sum + t.quantity, 0);
+
+    const lastTicket = await getLastUserTicket(userId);
+    let timeSinceLastPurchase = 24.0;
+    if (lastTicket) {
+      const diffMs = Date.now() - new Date(lastTicket.createdAt).getTime();
+      timeSinceLastPurchase = diffMs / (1000 * 60 * 60);
+    }
+
+    const failedAttempts = await countFailedAttemptsForUser(userId);
+
+    const features = [totalAmount, totalQuantity, timeSinceLastPurchase, failedAttempts];
+
+    try {
+      const predictionRes = await axios.post(`${process.env.FAST_API_URL}/predict/ocsvm`, { features });
+      const prediction = predictionRes.data.prediction;
+
+      if (prediction === -1) {
+        return res.status(403).json({
+          error: "Suspicious activity detected. Transaction blocked. Please contact support."
+        });
+      }
+    } catch (error) {
+      console.error('Fraud check failed:', error.message);
+      return res.status(500).json({ error: "Unable to verify transaction safety. Try again later." });
+    }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -54,8 +80,14 @@ export const createCheckoutSession = async (req, res) => {
         userId,
         eventId,
         date,
-        tierQuantities: JSON.stringify(tierQuantities) 
+        tierQuantities: JSON.stringify(tierQuantities)
       },
+      payment_intent_data: {
+        metadata: {
+          userId,
+          eventId,
+        }
+      }
     });
 
     res.status(200).json({ url: session.url });
@@ -97,43 +129,66 @@ export const generateQrCodeData = async (text) => {
 export const handleStripeWebhook = async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
-   
+
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  if (event.type === 'checkout.session.completed') {
+  const eventType = event.type;
+
+  if (eventType === 'payment_intent.payment_failed') {
+    const intent = event.data.object;
+console.log("Creating failed attempt with intent:", intent.id);
+    const intent_id = intent.id ; 
+    const metadata = intent.metadata || {};
+    const userId = metadata.userId;
+    const eventId = metadata.eventId
+    try {
+      if (userId) {
+        await createFailedAttempt({ userId, eventId, intent });
+  
+      } else {
+        console.warn("No userId in failed payment intent metadata");
+      }
+    } catch (err) {
+      console.error("Failed to log payment failure:", err);
+    }
+
+    return res.json({ received: true });
+  }
+ 
+  if (eventType === 'checkout.session.completed') {
     const session = event.data.object;
+    const { userId, eventId, date, tierQuantities } = session.metadata || {};
+
     if (session.payment_status === 'paid') {
-      const { userId, eventId, date, tierQuantities } = session.metadata;
-      const tiers = JSON.parse(tierQuantities);
-      
+      const tiers = JSON.parse(tierQuantities || '[]');
+
       try {
         const user = await findUserById(userId);
         if (!user) {throw new Error('User not found');}
+
         const event = await getEventById(eventId);
-
         if (!event) {throw new Error('Event not found');}
-        const eventDate = event.dates[0];
 
+        const eventDate = event.dates[0];
         const createdTickets = [];
         const ticketsMap = new Map();
 
         for (const { tierId, quantity } of tiers) {
           const tier = await findTier(tierId);
+          if (!tier) {throw new Error('Pricing tier not found');}
 
           await reduceCapacity(tier.id);
-
-          if (!tier) {throw new Error('Pricing tier not found');}
 
           for (let i = 0; i < quantity; i++) {
             const ticketUUID = uuidv4();
             const { pngUrl, asciiQR, textUrl } = await generateQrCodeData(ticketUUID);
             const stripeSessionId = session.id;
 
-            const ticket = await create (eventId, tierId, date, userId, stripeSessionId,ticketUUID,pngUrl) ;
+            const ticket = await create(eventId, tierId, date, userId, stripeSessionId, ticketUUID, pngUrl);
             if (!ticketsMap.has(tierId)) {
               ticketsMap.set(tierId, {
                 tierName: tier.name,
@@ -162,7 +217,7 @@ export const handleStripeWebhook = async (req, res) => {
 
         const ticketsToSend = Array.from(ticketsMap.values());
         const totalPaid = ticketsToSend.reduce((sum, t) => sum + t.price * t.quantity, 0);
-        
+
         await sendTicketEmail({
           to: user.email,
           userName: user.full_name || user.email,
@@ -176,8 +231,10 @@ export const handleStripeWebhook = async (req, res) => {
         console.error('Error processing webhook:', err);
       }
     }
+
+    return res.json({ received: true });
   }
-  res.json({ received: true });
+  return res.json({ received: true });
 };
 
 export const getOrderDetails = async (req, res) => {
