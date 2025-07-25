@@ -7,3 +7,5 @@ npm-debug.log
 
 /src/generated/prisma
 /src/uploads
+
+venv/
