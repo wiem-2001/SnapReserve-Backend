@@ -1,0 +1,7 @@
+src/generated/
+
+dist/
+build/
+
+
+node_modules/
