@@ -16,4 +16,6 @@ router.get('/get-events/owner', verifyToken, eventController.getEventsByOwner);
 
 router.get('/get-event/:id', eventController.getEventById);
 
+router.get('/recommended-events',verifyToken,eventController.getRecommendedEvents);
+
 export default router;

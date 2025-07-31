@@ -1,4 +1,5 @@
 import * as eventModel from '../models/EventModel.js';
+import axios from 'axios';
 
 export async function createEvent(req, res) {
   try {
@@ -147,5 +148,34 @@ export async function getEventById(req, res) {
     res.json(event);
   } catch (error) {
     res.status(500).json({ error: 'Failed to get event' });
+  }
+}
+
+export async function getRecommendedEvents(req, res) {
+  const user = req.user;
+  const n = parseInt(req.query.n) || 5;
+
+  if (!user.id) {
+    return res.status(400).json({ error: 'userId query parameter is required' });
+  }
+  try {
+    const recResponse = await axios.post(`${process.env.FAST_API_URL}/recommended-events`, { user_id: user.id, n });
+    const recommendedEventIds = recResponse.data.recommended_event_ids;
+
+    if (!recommendedEventIds || recommendedEventIds.length === 0) {
+      return res.json({ events: [] });
+    }
+
+    const events = await eventModel.getEventsByIds(recommendedEventIds);
+    const eventsMap = new Map(events.map(e => [e.id, e]));
+    const sortedEvents = recommendedEventIds
+      .map(id => eventsMap.get(id))
+      .filter(event => event !== undefined); 
+
+    return res.json({ events: sortedEvents });
+
+  } catch (error) {
+    console.error('Error fetching recommendations:', error);
+    return res.status(500).json({ error: 'Failed to get recommendations' });
   }
 }

@@ -5,3 +5,6 @@ numpy          # For array manipulation and reshaping input data for the models
 joblib         # For loading serialized (pickled) model files saved using joblib
 pydantic       # For validating and parsing request bodies in FastAPI using Python type hints
 pandas
+lightfm        # For the LightFM recommendation model
+papermill      # for notebook automation 
+sqlalchemy     # For database interactions, ORM capabilities

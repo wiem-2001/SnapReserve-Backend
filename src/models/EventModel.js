@@ -195,3 +195,13 @@ export async function getEventById(eventId) {
     },
   });
 }
+
+export async function getEventsByIds(eventIds) {
+  return await prisma.events.findMany({
+    where: { id: { in: eventIds } },
+    include: {
+      dates: true,
+      pricingTiers: true,
+    },
+  });
+}
