@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import authRoutes from './routes/authRoutes.js';
 import cookieParser from 'cookie-parser';
 import eventRoutes from './routes/eventRoutes.js'
+import notificationRoutes from './routes/notificationRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ticketRoutes from './routes/ticketRoutes.js'
@@ -26,11 +27,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
-
 app.use('/api/auth', authRoutes);
-
 app.use('/api/event',eventRoutes);
 app.use('/api/tickets',ticketRoutes);
+app.use('/api/notifications',notificationRoutes);
 
 app.get('/', (req, res) => {
   res.send('SnapReserve Backend is running!');

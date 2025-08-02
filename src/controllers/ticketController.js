@@ -8,6 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import axios from 'axios';
+import {setupSocket,sendFraudAlert} from '../sockets/index.js';
+import { saveNotification } from '../models/NotificationModel.js';
 
 export const getAvailableTierWithQuantity = async (tierId) => {
   const tier = await findTicketsById(tierId);
@@ -63,6 +65,11 @@ export const createCheckoutSession = async (req, res) => {
       if (prediction === -1) {
         if (req.user.email) {
           await sendSuspiciousActivityEmail(req.user.email);
+          sendFraudAlert(userId, {
+          message: 'Transaction blocked due to suspicious activity',
+          timestamp: new Date(),
+        });
+        saveNotification(userId, 'We noticed something unusual with your transaction and couldn’t complete it. If you think this was an error, please get in touch with support.');
         }
         return res.status(403).json({
           error: "Suspicious activity detected. Transaction blocked. Please contact support."
@@ -143,7 +150,6 @@ export const handleStripeWebhook = async (req, res) => {
 
   if (eventType === 'payment_intent.payment_failed') {
     const intent = event.data.object;
-console.log("Creating failed attempt with intent:", intent.id);
     const intent_id = intent.id ; 
     const metadata = intent.metadata || {};
     const userId = metadata.userId;
@@ -165,7 +171,7 @@ console.log("Creating failed attempt with intent:", intent.id);
   if (eventType === 'checkout.session.completed') {
     const session = event.data.object;
     const { userId, eventId, date, tierQuantities } = session.metadata || {};
-
+    console.log("Session metadata:", session.metadata);
     if (session.payment_status === 'paid') {
       const tiers = JSON.parse(tierQuantities || '[]');
 
@@ -192,6 +198,7 @@ console.log("Creating failed attempt with intent:", intent.id);
             const stripeSessionId = session.id;
 
             const ticket = await create(eventId, tierId, date, userId, stripeSessionId, ticketUUID, pngUrl);
+            console.log(`Created ticket: ${ticket.id} for user: ${userId}`);
             if (!ticketsMap.has(tierId)) {
               ticketsMap.set(tierId, {
                 tierName: tier.name,
