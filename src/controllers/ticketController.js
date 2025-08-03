@@ -76,8 +76,7 @@ export const createCheckoutSession = async (req, res) => {
         });
       }
     } catch (error) {
-      console.error('Fraud check failed:', error.message);
-      return res.status(500).json({ error: "Unable to verify transaction safety. Try again later." });
+      return res.status(500).json({error: error.message });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -108,7 +107,7 @@ export const createCheckoutSession = async (req, res) => {
 };
 
 export const generateQrCodeData = async (text) => {
-  try {
+  
     const pngDataUrl = await QRCode.toDataURL(text, {
       errorCorrectionLevel: 'H',
       width: 300,
@@ -118,7 +117,7 @@ export const generateQrCodeData = async (text) => {
         light: '#ffffff'
       }
     });
-
+    try {
     const asciiQR = await new Promise((resolve) => {
       qrcodeTerminal.generate(text, { small: true }, (code) => {
         resolve(code);
@@ -157,7 +156,6 @@ export const handleStripeWebhook = async (req, res) => {
     try {
       if (userId) {
         await createFailedAttempt({ userId, eventId, intent });
-  
       } else {
         console.warn("No userId in failed payment intent metadata");
       }
@@ -171,11 +169,9 @@ export const handleStripeWebhook = async (req, res) => {
   if (eventType === 'checkout.session.completed') {
     const session = event.data.object;
     const { userId, eventId, date, tierQuantities } = session.metadata || {};
-    console.log("Session metadata:", session.metadata);
     if (session.payment_status === 'paid') {
       const tiers = JSON.parse(tierQuantities || '[]');
-
-      try {
+     
         const user = await findUserById(userId);
         if (!user) {throw new Error('User not found');}
 
@@ -198,7 +194,6 @@ export const handleStripeWebhook = async (req, res) => {
             const stripeSessionId = session.id;
 
             const ticket = await create(eventId, tierId, date, userId, stripeSessionId, ticketUUID, pngUrl);
-            console.log(`Created ticket: ${ticket.id} for user: ${userId}`);
             if (!ticketsMap.has(tierId)) {
               ticketsMap.set(tierId, {
                 tierName: tier.name,
@@ -236,10 +231,6 @@ export const handleStripeWebhook = async (req, res) => {
           orderDate: new Date(),
           totalAmount: totalPaid,
         });
-
-      } catch (err) {
-        console.error('Error processing webhook:', err);
-      }
     }
 
     return res.json({ received: true });
@@ -306,8 +297,7 @@ export const getOrderDetails = async (req, res) => {
 
     res.json(orderDetails);
   } catch (err) {
-    console.error('Error fetching order details:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -337,7 +327,6 @@ export const getAllTicketsByUserIdGroupByCreatedDate = async (req,res) => {
 
       res.status(200).json(finalResult);
   } catch (error) {
-   console.error('Error fetching tickets:', error);
-     res.status(500).json({ error: 'Failed to fetch tickets' });
+     res.status(500).json({ error: error.message });
   }
 }
