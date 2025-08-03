@@ -1,0 +1,30 @@
+FROM python:3.12
+
+WORKDIR /PROJECT_ROOT
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    cmake \
+    libffi-dev \
+    python3-dev \
+    libblas-dev \
+    liblapack-dev \
+    gfortran \
+    libopenblas-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY ./fastappi ./fastappi
+
+COPY ./ml-models ./ml-models
+
+
+RUN pip install --default-timeout=100 --no-cache-dir -r ./fastappi/requirements.txt
+
+RUN python -m ipykernel install --user --name=python3
+
+
+EXPOSE 8000
+
+CMD ["uvicorn", "fastappi.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

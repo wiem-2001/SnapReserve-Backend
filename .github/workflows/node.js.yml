@@ -37,10 +37,18 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Build and push Docker image
+    - name: Build and push Node image
       uses: docker/build-push-action@v4
       with:
         context: .
-        file: ./Dockerfile
+        file: ./Dockerfile.node
         push: true
         tags: wiem23/snap-reserve-backend:latest
+
+    - name: Build and push FastAPI image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: ./Dockerfile.fastapi
+        push: true
+        tags: wiem23/snap-reserve-backend-fastapi:latest

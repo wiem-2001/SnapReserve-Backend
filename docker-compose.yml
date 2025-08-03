@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  node-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: node-backend  
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    networks:
+      - backend-network
+
+  fastapi-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+    container_name: fastapi_backend
+    ports:
+      - "8000:8000"
+    networks:
+      - backend-network
+
+networks:
+  backend-network:
+    driver: bridge

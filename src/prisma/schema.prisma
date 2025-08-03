@@ -36,6 +36,7 @@ model users {
   tickets                Ticket[]
   failedAttempts         FailedPaymentAttempt[]
   notifications          Notification[]
+  favorites              Favorite[]
 
 }
 
@@ -51,6 +52,7 @@ model events {
   dates         eventDate[]      
   pricingTiers  pricingTier[]
   tickets       Ticket[]
+  favorites     Favorite[]
 
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -79,7 +81,7 @@ model Ticket {
   user            users         @relation(fields: [userId], references: [id])
   userId          String
 
-  event           events        @relation(fields: [eventId], references: [id])
+  event           events        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   eventId         String
 
   tier            pricingTier   @relation(fields: [tierId], references: [id],onDelete: Cascade)
@@ -117,4 +119,14 @@ model Notification {
   @@index([userId])
 }
 
+model Favorite {
+  id       String   @id @default(cuid())
+  user     users    @relation(fields: [userId], references: [id])
+  userId   String
+  event    events   @relation(fields: [eventId], references: [id],onDelete: Cascade)
+  eventId  String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, eventId]) 
+}
 

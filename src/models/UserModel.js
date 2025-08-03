@@ -8,6 +8,7 @@ export const createUser = async (userData) => {
       password_hash: userData.password_hash,
       phone: userData.phone,
       role: userData.role,
+      is_verified: userData.is_verified || false,
       created_at: userData.created_at,
       updated_at: userData.updated_at
     }

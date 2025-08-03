@@ -95,7 +95,6 @@ export async function deleteEvent(req, res) {
   try {
     const ownerId = req.user.id;
     const { id } = req.params;
-
     const result = await eventModel.deleteEvent(id, ownerId);
     if (result.count === 0) {
       return res.status(404).json({ error: 'Event not found or not owned by you' });
@@ -110,9 +109,20 @@ export async function deleteEvent(req, res) {
 export async function getAllEvents(req, res) {
   try {
     const filters = req.query;
-    const events = await eventModel.getAllEventByFilter(filters);
-    console.log("eventssss",events)
-    res.status(200).json(events);
+
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    delete filters.page;
+    delete filters.limit;
+
+    const events = await eventModel.getAllEventByFilter(filters, { skip, take: limit });
+    res.status(200).json({
+      page,
+      limit,
+      data: events,
+    });
   } catch (error) {
     console.error('Error fetching events:', error);
     res.status(500).json({ error: 'Failed to get events' });
@@ -122,14 +132,23 @@ export async function getAllEvents(req, res) {
 export async function getEventsByOwner(req, res) {
   try {
     const ownerId = req.user.id;
-    const { keyword, category, dateRange } = req.query;
+    const { keyword, category, dateRange, page = 1, limit = 10 } = req.query;
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
     const events = await eventModel.getEventsByOwnerIdWithFilters(ownerId, {
       keyword,
       category,
       dateRange,
-    });
+    }, { skip, take: limitNum });
 
-    res.json(events);
+    res.json({
+      page: pageNum,
+      limit: limitNum,
+      data: events,
+    });
   } catch (error) {
     console.error('Error fetching owner events:', error);
     res.status(500).json({ error: 'Failed to get your events' });
@@ -177,5 +196,26 @@ export async function getRecommendedEvents(req, res) {
   } catch (error) {
     console.error('Error fetching recommendations:', error);
     return res.status(500).json({ error: 'Failed to get recommendations' });
+  }
+}
+
+export async function toggleEventFavorite(req, res) {
+  try {
+    const userId = req.user.id;
+    const { eventId } = req.params;
+    const favorite = await eventModel.toggleEventFavorite(userId, eventId);
+    res.status(200).json(favorite);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to toggle favorite' });
+  }
+}
+
+export async function getFavoriteEvents(req, res) {
+  try {
+    const userId = req.user.id;
+    const favoriteEvents = await eventModel.getFavoriteEventsByUserId(userId);
+    res.status(200).json(favoriteEvents);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch favorite events' });
   }
 }

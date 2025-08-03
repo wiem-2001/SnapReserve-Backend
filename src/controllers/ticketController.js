@@ -190,7 +190,7 @@ export const handleStripeWebhook = async (req, res) => {
           const tier = await findTier(tierId);
           if (!tier) {throw new Error('Pricing tier not found');}
 
-          await reduceCapacity(tier.id);
+          await reduceCapacity(tier.id,quantity);
 
           for (let i = 0; i < quantity; i++) {
             const ticketUUID = uuidv4();

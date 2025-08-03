@@ -18,11 +18,11 @@ export const findTier = async (tierId) => {
           });
 }
 
-export const reduceCapacity = async (pricingTierId) => {
+export const reduceCapacity = async (pricingTierId, quantity) => {
   return await prisma.pricingTier.update({
     where: { id: pricingTierId },
     data: {
-      capacity: { decrement: 1 },
+      capacity: { decrement: quantity },
     },
   });
 };
