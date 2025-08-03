@@ -32,7 +32,7 @@ export async function createEvent(req, res) {
     const event = await eventModel.createEvent(eventData);
     res.status(201).json(event);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create event' });
+    res.status(500).json({ error: error.message || 'Failed to create event' });
   }
 }
 
@@ -83,7 +83,6 @@ export async function editEvent(req, res) {
     });
 
   } catch (error) {
-    console.error('Error updating event:', error);
     res.status(500).json({ 
       error: 'Failed to update event',
       details: error.message 
@@ -124,8 +123,7 @@ export async function getAllEvents(req, res) {
       data: events,
     });
   } catch (error) {
-    console.error('Error fetching events:', error);
-    res.status(500).json({ error: 'Failed to get events' });
+    res.status(500).json({ error: error.message || 'Failed to fetch events' });
   }
 }
 
@@ -150,8 +148,7 @@ export async function getEventsByOwner(req, res) {
       data: events,
     });
   } catch (error) {
-    console.error('Error fetching owner events:', error);
-    res.status(500).json({ error: 'Failed to get your events' });
+    res.status(500).json({ error: error.message || 'Failed to get events by owner' });
   }
 }
 
@@ -166,7 +163,7 @@ export async function getEventById(req, res) {
 
     res.json(event);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to get event' });
+    res.status(500).json({ error: error.message || 'Failed to get event' });
   }
 }
 
@@ -194,7 +191,6 @@ export async function getRecommendedEvents(req, res) {
     return res.json({ events: sortedEvents });
 
   } catch (error) {
-    console.error('Error fetching recommendations:', error);
     return res.status(500).json({ error: 'Failed to get recommendations' });
   }
 }
@@ -206,7 +202,7 @@ export async function toggleEventFavorite(req, res) {
     const favorite = await eventModel.toggleEventFavorite(userId, eventId);
     res.status(200).json(favorite);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to toggle favorite' });
+    res.status(500).json({ error: error.message || 'Failed to toggle favorite' });
   }
 }
 
@@ -216,6 +212,6 @@ export async function getFavoriteEvents(req, res) {
     const favoriteEvents = await eventModel.getFavoriteEventsByUserId(userId);
     res.status(200).json(favoriteEvents);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch favorite events' });
+    res.status(500).json({ error: error.message || 'Failed to fetch favorite events' });
   }
 }

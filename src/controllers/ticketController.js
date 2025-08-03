@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import axios from 'axios';
-import {setupSocket,sendFraudAlert} from '../sockets/index.js';
+import {sendFraudAlert} from '../sockets/index.js';
 import { saveNotification } from '../models/NotificationModel.js';
 
 export const getAvailableTierWithQuantity = async (tierId) => {
@@ -101,7 +101,6 @@ export const createCheckoutSession = async (req, res) => {
 
     res.status(200).json({ url: session.url });
   } catch (err) {
-    console.error('Checkout session error:', err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -117,7 +116,7 @@ export const generateQrCodeData = async (text) => {
         light: '#ffffff'
       }
     });
-    try {
+
     const asciiQR = await new Promise((resolve) => {
       qrcodeTerminal.generate(text, { small: true }, (code) => {
         resolve(code);
@@ -129,10 +128,6 @@ export const generateQrCodeData = async (text) => {
       asciiQR: asciiQR,
       textUrl: text
     };
-  } catch (err) {
-    console.error('QR generation failed:', err);
-    throw err;
-  }
 };
 
 export const handleStripeWebhook = async (req, res) => {
@@ -149,7 +144,6 @@ export const handleStripeWebhook = async (req, res) => {
 
   if (eventType === 'payment_intent.payment_failed') {
     const intent = event.data.object;
-    const intent_id = intent.id ; 
     const metadata = intent.metadata || {};
     const userId = metadata.userId;
     const eventId = metadata.eventId
@@ -190,7 +184,7 @@ export const handleStripeWebhook = async (req, res) => {
 
           for (let i = 0; i < quantity; i++) {
             const ticketUUID = uuidv4();
-            const { pngUrl, asciiQR, textUrl } = await generateQrCodeData(ticketUUID);
+            const { pngUrl, asciiQR } = await generateQrCodeData(ticketUUID);
             const stripeSessionId = session.id;
 
             const ticket = await create(eventId, tierId, date, userId, stripeSessionId, ticketUUID, pngUrl);

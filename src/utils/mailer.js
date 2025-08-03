@@ -108,7 +108,7 @@ export const sendResetPasswordEmail = async ({ to, subject, text, user, resetUrl
   await transporter.sendMail(mailOptions);
 };
 
-export const sendTicketEmail = async ({ to, userName, tickets, orderId, orderDate, totalAmount }) => {
+export const sendTicketEmail = async ({ to, userName, tickets, orderDate, totalAmount }) => {
   const ticketsHtml = tickets.map(ticket => {
     const qrBlocks = ticket.qrCodeUrls.map((url, index) => `
       <div style="margin:10px 0; padding:15px;">
@@ -201,13 +201,7 @@ ${ticket.asciiQRs[index]}
       </div>
     `,
   };
-
-  try {
     await transporter.sendMail(mailOptions);
-  } catch (error) {
-    console.error('Failed to send ticket email:', error);
-    throw error;
-  }
 };
 
 export const sendSuspiciousActivityEmail = async (to) => {
