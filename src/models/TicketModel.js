@@ -87,3 +87,113 @@ export const createFailedAttempt = async ({ userId, eventId, intent }) => {
     }
   });
 };
+
+export const countTotalRevenueThisYear = async (ownerId) => {
+  const [result] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
+    FROM events e
+    JOIN "pricingTier" pt ON pt."eventId" = e.id
+    JOIN "Ticket" t ON t."tierId" = pt.id
+    WHERE e."ownerId" = ${ownerId}
+      AND EXTRACT(YEAR FROM t."createdAt") = EXTRACT(YEAR FROM CURRENT_DATE);
+  `;
+
+  const totalEarnings = result.total_earnings;
+  return totalEarnings;
+};
+
+export const countLastYearRevenue = async (ownerId) => {
+  const [result] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
+    FROM events e
+    JOIN "pricingTier" pt ON pt."eventId" = e.id
+    JOIN "Ticket" t ON t."tierId" = pt.id
+    WHERE e."ownerId" = ${ownerId}
+      AND EXTRACT(YEAR FROM t."createdAt") = EXTRACT(YEAR FROM CURRENT_DATE) - 1;
+  `;
+  return result.total_earnings;
+};
+
+export const countLastMonthRevenueThisMonth = async (ownerId) => {
+  const [result] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
+    FROM events e
+    JOIN "pricingTier" pt ON pt."eventId" = e.id
+    JOIN "Ticket" t ON t."tierId" = pt.id
+    WHERE e."ownerId" = ${ownerId}
+      AND t."createdAt" >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+      AND t."createdAt" < DATE_TRUNC('month', CURRENT_DATE);
+  `;
+
+  return result.total_earnings;
+};
+
+export const countRevenueOfMonthBeforeLast = async (ownerId) => {
+  const [result] = await prisma.$queryRaw`
+    SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
+    FROM events e
+    JOIN "pricingTier" pt ON pt."eventId" = e.id
+    JOIN "Ticket" t ON t."tierId" = pt.id
+    WHERE e."ownerId" = ${ownerId}
+      AND t."createdAt" >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '2 month')
+      AND t."createdAt" < DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month');
+  `;
+  return result.total_earnings;
+};
+
+export const  repeatCount = async (userId) => {
+  return  await prisma.ticket.groupBy({
+  by: ['userId'],
+  _count: {
+    userId: true,
+  },
+  having: {
+    userId: {
+      _count: {
+        gt: 1
+      }
+    }
+  }
+});
+}
+
+export async function getBookingTrendsForUser(userId) {
+  const now = new Date();
+  const trends = [];
+
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const start = new Date(date.getFullYear(), date.getMonth(), 1);
+    const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+    const monthName = start.toLocaleString('default', { month: 'short' });
+
+    const yourTickets = await prisma.ticket.count({
+      where: {
+        event: {
+          ownerId: userId,
+        },
+        createdAt: {
+          gte: start,
+          lte: end,
+        },
+      },
+    });
+
+    const allTickets = await prisma.ticket.count({
+      where: {
+        createdAt: {
+          gte: start,
+          lte: end,
+        },
+      },
+    });
+
+    trends.push({
+      month: monthName,
+      yourTickets,
+      allTickets,
+    });
+  }
+
+  return trends;
+}

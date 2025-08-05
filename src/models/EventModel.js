@@ -261,3 +261,26 @@ export async function getFavoriteEventsByUserId(userId) {
     },
   });
 }
+
+export async function getAllEventsByOwnerID (userId){
+  return await prisma.events.findMany({
+    where: { ownerId: userId },
+    include: {
+      tickets: true,
+      pricingTiers: true
+    }
+  });
+}
+
+export async function countUpcomingEventsByOwnerId(ownerId) {
+ const  result = await prisma.$queryRaw `
+    SELECT COUNT(*) AS totalcommingEvents
+      FROM events e
+      JOIN "eventDate" d ON e.id = d."eventId"
+       WHERE e."ownerId" = ${ownerId}
+        AND d.date > CURRENT_DATE
+    `; 
+  const totalComingEvents = Number(result[0].totalcommingevents);
+  
+  return totalComingEvents;
+}

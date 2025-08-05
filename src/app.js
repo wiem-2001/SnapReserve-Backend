@@ -10,6 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import ticketRoutes from './routes/ticketRoutes.js'
 import { handleStripeWebhook } from './controllers/ticketController.js';
+import dashboard from './routes/dashboardRoutes.js'
 const app = express();
 
 app.post('/api/tickets/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
@@ -31,6 +32,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/event',eventRoutes);
 app.use('/api/tickets',ticketRoutes);
 app.use('/api/notifications',notificationRoutes);
+app.use('/api/dashboard',dashboard);
 
 app.get('/', (req, res) => {
   res.send('SnapReserve Backend is running!');
