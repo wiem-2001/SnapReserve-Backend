@@ -37,7 +37,26 @@ model users {
   failedAttempts         FailedPaymentAttempt[]
   notifications          Notification[]
   favorites              Favorite[]
+  devices                UserDevice[]
+  suspiciousActivity     SuspiciousActivity[]
 
+}
+
+model UserDevice {
+  id        String   @id @default(cuid())
+  userId    String
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device    String   
+  lastUsed  DateTime @default(now())
+}
+
+model SuspiciousActivity {
+  id        String   @id @default(cuid())
+  userId    String
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  device    String
+  createdAt DateTime @default(now())
 }
 
 model events {
@@ -47,7 +66,7 @@ model events {
   description   String
   image         String
   ownerId       String
-  owner         users           @relation(fields: [ownerId], references: [id])
+  owner         users           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   dates         eventDate[]      
   pricingTiers  pricingTier[]
@@ -78,7 +97,7 @@ model pricingTier {
 
 model Ticket {
   id              String        @id @default(uuid())
-  user            users         @relation(fields: [userId], references: [id])
+  user            users         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId          String
 
   event           events        @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -97,15 +116,15 @@ model Ticket {
   uuid            String   @unique
 }
 
-model FailedPaymentAttempt {
-  id        String   @id @default(cuid())
-  user      users    @relation(fields: [userId], references: [id])
-  userId    String
-  sessionId String   
-  eventId   String? 
-  reason    String?  
-  createdAt DateTime @default(now())
-}
+  model FailedPaymentAttempt {
+    id        String   @id @default(cuid())
+    user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId    String
+    sessionId String   
+    eventId   String? 
+    reason    String?  
+    createdAt DateTime @default(now())
+  }
 
 model Notification {
   id        String      @id @default(uuid())
@@ -114,14 +133,14 @@ model Notification {
   createdAt DateTime @default(now())
   read      Boolean  @default(false)
 
-  user      users    @relation(fields: [userId], references: [id])
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model Favorite {
   id       String   @id @default(cuid())
-  user     users    @relation(fields: [userId], references: [id])
+  user     users    @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId   String
   event    events   @relation(fields: [eventId], references: [id],onDelete: Cascade)
   eventId  String

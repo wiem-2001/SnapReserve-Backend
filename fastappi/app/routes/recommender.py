@@ -10,11 +10,11 @@ class RecommendationRequest(BaseModel):
     user_id: str
     n: int = 5
 
-@router.post("/")
+@router.post("")
 async def recommend(request: RecommendationRequest):
     rec = get_recommender()
 
-    print("🔍 Loaded recommender keys:", list(rec.keys()) if rec else "None")
+    print("Loaded recommender keys:", list(rec.keys()) if rec else "None")
 
     required_keys = {'model', 'dataset', 'user_features', 'item_features'}
     if not rec or not required_keys.issubset(rec):

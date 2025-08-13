@@ -301,7 +301,7 @@ export const getAllTicketsByUserIdGroupByCreatedDate = async (req,res) => {
       if (!userId) {
       return res.status(400).json({ error: 'User ID is required' });
     }
-    const tickets = await getAllTickets(userId.stringify);
+    const tickets = await getAllTickets(userId);
     const result = {};
     
     tickets.forEach(ticket => {

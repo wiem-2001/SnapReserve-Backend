@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape */
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import {
@@ -16,7 +17,14 @@ import {
   updateUserWithGoogleId,
   updateUserWithFacebookId,
   updateUserProfile,
-  findPasswordByUserId
+  findPasswordByUserId,
+  deleteUserById,
+  getKnownDevicesByUserAgent ,
+  getKnownDevicesByUserId,
+  createSuspiciousLogin,
+  createKnownDevice,
+  updateUserDevice ,
+  getDevicesByUserId
 } from '../models/UserModel.js';
 import jwt from 'jsonwebtoken';
 import { sendVerificationEmail, sendResetPasswordEmail } from '../utils/mailer.js';
@@ -24,19 +32,80 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import dotenv from 'dotenv';
-
+import { saveNotification } from '../controllers/notificationController.js';
+import { UAParser } from 'ua-parser-js';
+import { ticketcountByEventOwnerId } from "../models/TicketModel.js"
+import { differenceInDays } from 'date-fns';
 dotenv.config();
 
+function parseDeviceName(userAgent) {
+  const parser = new UAParser(userAgent);
+  const browser = parser.getBrowser().name || 'Unknown Browser';
+  const os = parser.getOS().name || 'Unknown OS';
+  return `${browser} on ${os}`;
+}
+
+const STALE_DEVICE_THRESHOLD_DAYS = 30;
+
+export async function checkAndLogDevice(req, userId) {
+  const userAgent = req.headers['user-agent'] || 'Unknown Device';
+  const allDevices = await getKnownDevicesByUserId(userId); 
+  const matchingDevices = allDevices.filter(d => d.device === userAgent);
+  const deviceName = parseDeviceName(userAgent);
+
+  if (!allDevices || allDevices.length === 0) {
+    await createKnownDevice(userId, userAgent);
+    return;
+  }
+
+  if (!matchingDevices || matchingDevices.length === 0) {
+    await createKnownDevice(userId, userAgent);
+    await createSuspiciousLogin(userId, userAgent);
+    await saveNotification(
+      userId,
+      `New device detected: ${deviceName}. If this wasn't you, please secure your account.`
+    );
+  } else {
+    const hasRecentlyUsedDevice = matchingDevices.some(device => {
+      const daysSinceLastUse = differenceInDays(new Date(), new Date(device.lastUsed));
+      return daysSinceLastUse <= STALE_DEVICE_THRESHOLD_DAYS;
+    });
+
+    if (hasRecentlyUsedDevice) {
+      await createKnownDevice(userId, userAgent);
+    } else {
+      await createKnownDevice(userId, userAgent);
+      await createSuspiciousLogin(userId, userAgent);
+      await saveNotification(
+        userId,
+        `Previously used device detected after more than ${STALE_DEVICE_THRESHOLD_DAYS} days: ${deviceName}. If this wasn't you, please secure your account.`
+      );
+    }
+  }
+}
+
 export const signup = async (req, res) => {
-  const { fullName, email, password, phone, role } = req.body;
+  const { fullName, email, password, phone, role ,birth_date,gender} = req.body;
   try {
-    if (!fullName || !email || !password || !phone || !role) {
+    if (!fullName || !email || !password || !phone || !role || !birth_date ||!gender) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
     const existingUser = await findUserByEmail(email);
     if (existingUser) {
       return res.status(409).json({ message: 'This email is already in use' });
+    }
+
+    const birthDateObj = new Date(birth_date);
+    if (isNaN(birthDateObj.getTime())) {
+      return res.status(400).json({ message: 'Invalid birth date format' });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const birthYear = birthDateObj.getFullYear();
+
+    if (currentYear - birthYear < 13) {
+      return res.status(400).json({ message: 'You must be at least 13 years old to sign up.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -48,6 +117,8 @@ export const signup = async (req, res) => {
       password_hash: hashedPassword,
       phone,
       role,
+      birth_date,
+      gender,
       created_at: now,
       updated_at: now
     });
@@ -121,6 +192,8 @@ export const signin = async (req, res) => {
       return res.status(403).json({ message: 'Please verify your email before signing in' });
     }
 
+    await checkAndLogDevice(req, user.id);
+
     const payload = {
       id: user.id,
       fullName: user.full_name,
@@ -156,9 +229,13 @@ export const requestPasswordReset = async (req, res) => {
 
   try {
     const user = await findUserByEmail(email);
+      if (!email ) {
+      return res.status(400).json({ message: 'Please enter your email' });
+    }
     if (!user) {
       return res.status(404).json({ message: 'No account found with that email.' });
     }
+   
     const user_name = user.full_name
 
     const resetToken = crypto.randomBytes(32).toString('hex');
@@ -185,6 +262,9 @@ export const requestPasswordReset = async (req, res) => {
 export const resetPassword = async (req, res) => {
   const { userId, token, newPassword } = req.body;
 
+  if(!newPassword) {
+     return res.status(400).json({ message: 'Please fill the fields' });
+  }
   try {
     const user = await findUserById(userId);
     if (!user || user.password_reset_token !== token) {
@@ -324,7 +404,7 @@ passport.use(new GoogleStrategy({
       } else {
         const fullName = profile.displayName;
         const phone = profile._json?.phoneNumber || null;
-
+        
         user = await createUser({
           full_name: fullName,
           email,
@@ -337,7 +417,7 @@ passport.use(new GoogleStrategy({
         });
       }
     }
-
+    
     return done(null, user);
   } catch (err) {
     return done(err, null);
@@ -361,6 +441,7 @@ passport.use(new FacebookStrategy({
 
       if (user) {
         user = await updateUserWithFacebookId(user.id, facebookId);
+        
       } else {
         user = await createUser({
           full_name: profile.displayName,
@@ -373,61 +454,156 @@ passport.use(new FacebookStrategy({
         });
       }
     }
-
     return done(null, user);
   } catch (err) {
     return done(err, null);
   }
 }));
 
-export const googleAuthCallback = (req, res) => {
+export const googleAuthCallback = async (req, res) => {
   const user = req.user;
   if (!user) {
     return res.redirect(`${process.env.FRONTEND_URL}/signin?error=authentication_failed`);
   }
 
-  const payload = {
-    id: user.id,
-    fullName: user.full_name,
-    email: user.email,
-    role: user.role
-  };
+  try {
+    await checkAndLogDevice(req, user.id); 
 
-  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const payload = {
+      id: user.id,
+      fullName: user.full_name,
+      email: user.email,
+      role: user.role
+    };
 
-  res.cookie('token', token, {
-    httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  });
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-  res.redirect(`${process.env.FRONTEND_URL}`);
+    res.cookie('token', token, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.redirect(`${process.env.FRONTEND_URL}`);
+  } catch (error) {
+    console.error('Error logging device:', error);
+    return res.redirect(`${process.env.FRONTEND_URL}/signin?error=device_logging_failed`);
+  }
 };
 
-export const facebookCallback = (req, res) => {
+export const facebookCallback = async (req, res) => {
   const user = req.user;
   if (!user) {
     return res.redirect(`${process.env.FRONTEND_URL}/signin?error=authentication_failed`);
   }
 
-  const payload = {
-    id: user.id,
-    fullName: user.full_name,
-    email: user.email,
-    role: user.role
-  };
+  try {
+    await checkAndLogDevice(req, user.id); 
 
-  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const payload = {
+      id: user.id,
+      fullName: user.full_name,
+      email: user.email,
+      role: user.role
+    };
 
-  res.cookie('token', token, {
-    httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  });
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-  res.redirect(`${process.env.FRONTEND_URL}`);
+    res.cookie('token', token, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.redirect(`${process.env.FRONTEND_URL}`);
+  } catch (error) {
+    console.error('Error logging device:', error);
+    return res.redirect(`${process.env.FRONTEND_URL}/signin?error=device_logging_failed`);
+  }
 };
 
+export const deleteUser = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+
+    const ticketsCount = await ticketcountByEventOwnerId(userId)
+
+    if (ticketsCount > 0) {
+      return res.status(400).json({
+        message: "Cannot delete account: tickets have been sold for your events.",
+      });
+    }
+
+    await deleteUserById(userId);
+
+    res.clearCookie('token', { httpOnly: true });
+    res.status(200).json({ message: 'Account and related data deleted successfully.' });
+
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Failed to delete account.' });
+  }
+};
+function parseUserAgent(ua) {
+  let os = 'Unknown OS';
+  if (/Windows NT 10\.0/.test(ua)) {os = 'Windows 10';}
+  else if (/Mac OS X (\d+[_\.]\d+)/.test(ua)) {os = `Mac OS X ${ua.match(/Mac OS X (\d+[_\.]\d+)/)[1].replace('_', '.')}`;}
+  else if (/Android/.test(ua)) {os = 'Android';}
+  else if (/iPhone OS (\d+[_\.]\d+)/.test(ua)) {os = `iOS ${ua.match(/iPhone OS (\d+[_\.]\d+)/)[1].replace('_', '.')}`;}
+  else if (/Linux/.test(ua)) {os = 'Linux';}
+
+  let browser = 'Unknown Browser';
+  let version = '';
+  if (/OPR\/([\d\.]+)/.test(ua)) {
+    browser = 'Opera';
+    version = ua.match(/OPR\/([\d\.]+)/)[1];
+  }
+  else if (/Edg\/([\d\.]+)/.test(ua)) {
+    browser = 'Edge';
+    version = ua.match(/Edg\/([\d\.]+)/)[1];
+  }
+  else if (/Chrome\/([\d\.]+)/.test(ua)) {
+    browser = 'Chrome';
+    version = ua.match(/Chrome\/([\d\.]+)/)[1];
+  }
+  else if (/Safari\/([\d\.]+)/.test(ua) && !/Chrome/.test(ua)) {
+    browser = 'Safari';
+    version = ua.match(/Version\/([\d\.]+)/)?.[1] || '';
+  }
+  else if (/Firefox\/([\d\.]+)/.test(ua)) {
+    browser = 'Firefox';
+    version = ua.match(/Firefox\/([\d\.]+)/)[1];
+  }
+  else if (/MSIE ([\d\.]+)/.test(ua)) {
+    browser = 'IE';
+    version = ua.match(/MSIE ([\d\.]+)/)[1];
+  }
+  else if (/Trident\/.*rv:([\d\.]+)/.test(ua)) {
+    browser = 'IE';
+    version = ua.match(/Trident\/.*rv:([\d\.]+)/)[1];
+  }
+  let deviceType = 'desktop';
+  if (/Mobile|Android|iPhone|iPad|iPod/.test(ua)) {deviceType = 'mobile';}
+
+  return `${browser} ${version} on ${os} (${deviceType})`;
+}
+
+export const getUserDevices = async (req, res) => {
+  const user = req.user;
+
+  try {
+    let devices = await getDevicesByUserId(user.id);
+    devices = devices.map(device => ({
+      ...device,
+      friendlyDevice: parseUserAgent(device.device),
+    }));
+
+    res.status(200).json(devices);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to get user devices', error: error.message });
+  }
+};
 export { passport };

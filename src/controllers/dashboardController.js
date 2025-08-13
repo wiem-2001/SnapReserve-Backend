@@ -43,13 +43,12 @@ export async function stats(req, res) {
   }
 }
 
-export async function bookingTrends(req, res) {
+export async function ticketBenMarking(req, res) {
   try {
     const userId = req.user.id;
-    const trends = await ticketModel.getBookingTrendsForUser(userId);
+    const trends = await ticketModel.getTicketsBenMarking(userId);
     res.json(trends);
   } catch (error) {
-    console.error('Error in bookingTrends:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 }
@@ -61,7 +60,6 @@ export async function eventPerformance (req, res) {
 
   const performance = events.map((event, index) => {
     const totalBookings = event.tickets.length;
-    console.log("total bookings",totalBookings)
     const revenue = event.tickets.reduce((sum, ticket) => {
       const tier = event.pricingTiers.find(t => t.id === ticket.tierId);
       return sum + (tier?.price || 0);

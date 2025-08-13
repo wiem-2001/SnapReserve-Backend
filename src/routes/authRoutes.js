@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup,signin , requestPasswordReset, resetPassword , logout, getMe , uploadProfileImage , updateProfile ,updateUserPassword, verifyEmail , googleAuthCallback , facebookCallback} from '../controllers/authController.js'; 
+import { signup,signin , requestPasswordReset, resetPassword , logout, getMe , uploadProfileImage , updateProfile ,updateUserPassword, verifyEmail , googleAuthCallback , facebookCallback, deleteUser,getUserDevices} from '../controllers/authController.js'; 
 import { signupValidator } from '../validators/authValidator.js';
 import { validate } from '../middlewares/validate.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
@@ -26,5 +26,7 @@ router.get('/google/callback', passport.authenticate('google', { session: false,
 router.get('/facebook',passport.authenticate('facebook', { scope: ['email'] }));
 
 router.get('/facebook/callback', passport.authenticate('facebook', {session: false,failureRedirect: '/login',}),facebookCallback);
+router.delete('/delete-account', verifyToken,deleteUser)
+router.get('/devices', verifyToken, getUserDevices);
 
 export default router;

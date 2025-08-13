@@ -157,7 +157,7 @@ export const  repeatCount = async (userId) => {
 });
 }
 
-export async function getBookingTrendsForUser(userId) {
+export async function getTicketsBenMarking(userId) {
   const now = new Date();
   const trends = [];
 
@@ -179,7 +179,7 @@ export async function getBookingTrendsForUser(userId) {
       },
     });
 
-    const allTickets = await prisma.ticket.count({
+    const totalTickets = await prisma.ticket.count({
       where: {
         createdAt: {
           gte: start,
@@ -188,12 +188,38 @@ export async function getBookingTrendsForUser(userId) {
       },
     });
 
+    const eventCount = await prisma.ticket.findMany({
+      where: {
+        createdAt: {
+          gte: start,
+          lte: end,
+        },
+      },
+      select: {
+        eventId: true,
+      },
+      distinct: ['eventId'],
+    });
+
+    const averageTickets = eventCount.length > 0
+      ? totalTickets / eventCount.length
+      : 0;
+
     trends.push({
       month: monthName,
       yourTickets,
-      allTickets,
+      averageTickets,
     });
   }
 
   return trends;
 }
+
+export const ticketcountByEventOwnerId = async (userId) => { 
+  return await prisma.ticket.count({
+      where: {
+        event: {
+          ownerId: userId,
+        },
+      },
+    });}

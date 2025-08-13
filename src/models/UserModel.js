@@ -8,6 +8,8 @@ export const createUser = async (userData) => {
       password_hash: userData.password_hash,
       phone: userData.phone,
       role: userData.role,
+      birth_date: userData.birth_date,
+      gender:userData.gender,
       is_verified: userData.is_verified || false,
       created_at: userData.created_at,
       updated_at: userData.updated_at
@@ -138,3 +140,56 @@ export const findUserByFacebookId = async (facebookId) => {
     where: { facebook_id: facebookId }
   });
 };
+
+export const deleteUserById = async (userId) => {
+  return prisma.users.delete({
+    where: { id: userId }
+  });
+}
+
+export const getKnownDevicesByUserAgent  = async (userId, userAgent ) => {
+  return prisma.userDevice.findMany({
+    where: {
+      userId: userId,
+       device: userAgent
+    }
+  });
+}
+export const createKnownDevice = async (userId, userAgent) => {
+  return await prisma.userDevice.create({
+        data: {
+          userId: userId,
+          device: userAgent,
+          lastUsed: new Date(),
+        },
+      });
+};  
+
+export const createSuspiciousLogin = async (userId, userAgent) => {
+  return await  prisma.suspiciousActivity.create({
+        data: {
+          userId: userId,
+          action: 'Login from new device',
+          device: userAgent,
+          createdAt: new Date(),
+        },
+      });
+
+}
+export const updateUserDevice = async (knownDevice) => {
+  return await prisma.userDevice.update({
+        where: { id: knownDevice.id },
+        data: { lastUsed: new Date() },
+      });
+}
+
+export const getDevicesByUserId = async (userId) => {
+  return await prisma.userDevice.findMany({
+    where: { userId: userId },
+    orderBy: { lastUsed: 'desc' }
+  });
+};
+
+export const getKnownDevicesByUserId= async(userId) => {
+  return await prisma.userDevice.findMany({ where: { userId } });
+}

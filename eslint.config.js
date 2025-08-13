@@ -24,7 +24,7 @@ export default defineConfig([
       "prefer-const": "warn",
       "no-constant-condition": "warn",
       "max-len": ["error", { code: 300 }],
-      "max-lines": ["error", { max: 500 }],
+      "max-lines": ["error", { max: 700 }],
       "no-duplicate-imports": "error",
     },
   },

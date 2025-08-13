@@ -200,7 +200,9 @@ export async function toggleEventFavorite(req, res) {
     const userId = req.user.id;
     const { eventId } = req.params;
     const favorite = await eventModel.toggleEventFavorite(userId, eventId);
-    res.status(200).json(favorite);
+    res.status(200).json({
+      isFavorited: !!favorite,
+      favorite} );
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to toggle favorite' });
   }
