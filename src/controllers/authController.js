@@ -183,7 +183,11 @@ export const signin = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const isMatch = bcrypt.compare(password, user.password_hash);
+     if (!user.password_hash) {
+      return res.status(400).json({ message: 'This account was created using Google/Facebook. Please log in with that method.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -191,10 +195,7 @@ export const signin = async (req, res) => {
     if (!user.is_verified) {
       return res.status(403).json({ message: 'Please verify your email before signing in' });
     }
-
-    if (!user.password_hash) {
-      return res.status(400).json({ message: 'This account was created using Google/Facebook. Please log in with that method.' });
-    }
+   
     await checkAndLogDevice(req, user.id);
 
     const payload = {

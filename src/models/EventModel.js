@@ -220,8 +220,16 @@ export async function getEventById(eventId) {
 }
 
 export async function getEventsByIds(eventIds) {
+  const now = new Date();
   return await prisma.events.findMany({
-    where: { id: { in: eventIds } },
+    where: { 
+      id: { in: eventIds },
+      dates: {
+        some: {
+          date: { gt: now }
+        }
+      }
+    },
     include: {
       dates: true,
       pricingTiers: true,
@@ -285,13 +293,24 @@ export async function countUpcomingEventsByOwnerId(ownerId) {
   return totalComingEvents;
 }
 
-export async function getNewArrivals () {
+export async function getNewArrivals() {
+  const now = new Date();
+
   return await prisma.events.findMany({
-  orderBy: { createdAt: 'desc' },
-  take: 10 ,
-  include: {
-          dates: true,
-          pricingTiers: true,
-        },
-});
+    where: {
+      dates: {
+        some: {
+          date: {
+            gte: now
+          }
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    include: {
+      dates: true,
+      pricingTiers: true,
+    },
+  });
 }
