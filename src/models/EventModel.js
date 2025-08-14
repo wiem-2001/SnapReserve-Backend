@@ -284,3 +284,14 @@ export async function countUpcomingEventsByOwnerId(ownerId) {
   
   return totalComingEvents;
 }
+
+export async function getNewArrivals () {
+  return await prisma.events.findMany({
+  orderBy: { createdAt: 'desc' },
+  take: 10 ,
+  include: {
+          dates: true,
+          pricingTiers: true,
+        },
+});
+}

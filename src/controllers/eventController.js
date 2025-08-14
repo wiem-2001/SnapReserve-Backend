@@ -171,26 +171,34 @@ export async function getRecommendedEvents(req, res) {
   const user = req.user;
   const n = parseInt(req.query.n) || 5;
 
-  if (!user.id) {
-    return res.status(400).json({ error: 'userId query parameter is required' });
+  if (!user?.id) {
+    return res.status(400).json({ error: 'User ID is required' });
   }
+
   try {
-    const recResponse = await axios.post(`${process.env.FAST_API_URL}/recommended-events`, { user_id: user.id, n });
-    const recommendedEventIds = recResponse.data.recommended_event_ids;
+    let recommendedEventIds = [];
 
-    if (!recommendedEventIds || recommendedEventIds.length === 0) {
-      return res.json({ events: [] });
+    try {
+      const recResponse = await axios.post(`${process.env.FAST_API_URL}/recommended-events`, { 
+        user_id: user.id, 
+        n 
+      });
+      recommendedEventIds = recResponse.data?.recommended_event_ids || [];
+    } catch (err) {
+      console.warn(`Recommender API failed: ${err.message}`);
     }
-
+    if (!recommendedEventIds.length) {
+      const newArrivals = await eventModel.getNewArrivals();
+      return res.json({ events: newArrivals });
+    }
     const events = await eventModel.getEventsByIds(recommendedEventIds);
     const eventsMap = new Map(events.map(e => [e.id, e]));
     const sortedEvents = recommendedEventIds
       .map(id => eventsMap.get(id))
-      .filter(event => event !== undefined); 
-
+      .filter(Boolean);
     return res.json({ events: sortedEvents });
-
   } catch (error) {
+    console.error(error);
     return res.status(500).json({ error: 'Failed to get recommendations' });
   }
 }

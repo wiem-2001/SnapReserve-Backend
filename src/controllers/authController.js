@@ -192,6 +192,9 @@ export const signin = async (req, res) => {
       return res.status(403).json({ message: 'Please verify your email before signing in' });
     }
 
+    if (!user.password_hash) {
+      return res.status(400).json({ message: 'This account was created using Google/Facebook. Please log in with that method.' });
+    }
     await checkAndLogDevice(req, user.id);
 
     const payload = {
