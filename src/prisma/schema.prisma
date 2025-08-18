@@ -59,6 +59,17 @@ model SuspiciousActivity {
   createdAt DateTime @default(now())
 }
 
+enum RefundStatus {
+  NONE
+  PROCESSED
+}
+
+enum RefundType {
+  NO_REFUND
+  FULL_REFUND
+  PARTIAL_REFUND
+}
+
 model events {
   id            String           @id @default(cuid())
   title         String
@@ -69,7 +80,6 @@ model events {
   owner         users           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   dates         eventDate[]      
-  pricingTiers  pricingTier[]
   tickets       Ticket[]
   favorites     Favorite[]
 
@@ -83,6 +93,7 @@ model eventDate {
   location      String
   eventId       String
   event         events    @relation(fields: [eventId], references: [id] , onDelete: Cascade)
+  pricingTiers  pricingTier[]
 }
 
 model pricingTier {
@@ -90,9 +101,12 @@ model pricingTier {
   name          String
   price         Float
   capacity      Int       
-  eventId       String
-  event         events    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  dateId        String
+  eventDate     eventDate @relation(fields: [dateId], references: [id], onDelete: Cascade)
   tickets       Ticket[]  
+  refundType    RefundType        @default(NO_REFUND)
+  refundDays    Int?
+  refundPercentage Int?
 }
 
 model Ticket {
@@ -108,12 +122,16 @@ model Ticket {
 
   date            DateTime
   stripeSessionId String?
-
+  stripePaymentId String?
   qrCodeUrl       String?
   pdfUrl          String?
 
-  createdAt       DateTime      @default(now())
-  uuid            String   @unique
+  createdAt         DateTime      @default(now())
+  uuid              String   @unique
+  refundStatus      RefundStatus       ?       @default(NONE) 
+  refundAmount      Float?
+  refundRequestDate DateTime?
+  refundProcessDate DateTime?
 }
 
   model FailedPaymentAttempt {

@@ -12,10 +12,13 @@ export async function stats(req, res) {
     const totalRevenue = await ticketModel.countTotalRevenueThisYear(userId); 
     const lastYearRevenue = await ticketModel.countLastYearRevenue(userId); 
 
-    const thisMonthRevenue = await ticketModel.countLastMonthRevenueThisMonth(userId); 
-    const prevMonthRevenue = await ticketModel.countRevenueOfMonthBeforeLast(userId); 
+    const thisMonthRevenue = await ticketModel.countRevenueOfCurrentMonth(userId); 
+    const prevMonthRevenue = await ticketModel.countLastMonthRevenue(userId); 
     const upcomingEvents = await eventModel.countUpcomingEventsByOwnerId(userId);
-
+    const countCompletionAndCancelation = await ticketModel.completionAndCancelationRate(userId);
+    const total = countCompletionAndCancelation.total_tickets || 0;
+    const cancelled = countCompletionAndCancelation.cancelled_tickets || 0;
+    const completed = countCompletionAndCancelation.completed_tickets || 0; 
     res.json({
       earnings: {
         thisYear: totalRevenue,
@@ -33,12 +36,11 @@ export async function stats(req, res) {
         total: events.length,
         upcoming: upcomingEvents,
       },
-      completionRate: 91.5, 
-      cancellationRate: 8.5,
+      completionRate: total > 0 ? ((completed / total) * 100).toFixed(2) : "0.00", 
+      cancellationRate: total > 0 ? ((cancelled / total) * 100).toFixed(2) : "0.00",
     });
 
   } catch (error) {
-    console.error('Error in stats:', error);
     res.status(500).json({ message: 'Failed to load stats', error: error.message });
   }
 }
@@ -47,42 +49,60 @@ export async function ticketBenMarking(req, res) {
   try {
     const userId = req.user.id;
     const trends = await ticketModel.getTicketsBenMarking(userId);
-    res.json(trends);
+     res.status(200).json({ 
+      trends : trends
+    });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
-export async function eventPerformance (req, res) {
+export async function eventPerformance(req, res) {
   const userId = req.user.id;
 
-  const events = await eventModel.getAllEventsByOwnerID(userId);
+  try {
+    const events = await eventModel.getAllEventsByOwnerID(userId);
+    
+    const performance = events.map((event) => {
+      const allPricingTiers = event.dates.flatMap(date => date.pricingTiers || []);
+      
+      const revenue = event.tickets.reduce((sum, ticket) => {
+        const tier = allPricingTiers.find(t => t.id === ticket.tierId);
+        return sum + (tier?.price || 0);
+      }, 0);
+      
+      return {
+        event: event.title,
+        bookings: event.tickets.length,
+        revenue,
+      };
+    });
 
-  const performance = events.map((event, index) => {
-    const totalBookings = event.tickets.length;
-    const revenue = event.tickets.reduce((sum, ticket) => {
-      const tier = event.pricingTiers.find(t => t.id === ticket.tierId);
-      return sum + (tier?.price || 0);
-    }, 0);
-    return {
-      event: event.title,
-      bookings: totalBookings,
-      revenue,
-      rank: index + 1
-    };
-  });
+    const sortedPerformance = performance
+      .sort((a, b) => b.revenue - a.revenue)
+      .map((item, index) => ({ ...item, rank: index + 1 }));
 
-  res.json(performance.sort((a, b) => b.revenue - a.revenue));
+     res.status(200).json({ 
+      sortedPerformance : sortedPerformance
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Failed to load event performance', 
+      error: error.message 
+    });
+  }
 }
 
-export async function getTopEventByOwner(req,res)  {
-    try {
-  const userId = req.user.id;
-  const events = await eventModel.getAllEventsByOwnerID(userId);
+export async function getTopEventByOwner(req, res) {
+  try {
+    const userId = req.user.id;
+    const events = await eventModel.getAllEventsByOwnerID(userId);
 
     const enriched = events.map(event => {
+      const allPricingTiers = event.dates.flatMap(date => date.pricingTiers);
+      
       const revenue = event.tickets.reduce((sum, ticket) => {
-        const tier = event.pricingTiers.find(t => t.id === ticket.tierId);
+        const tier = allPricingTiers.find(t => t.id === ticket.tierId);
         return sum + (tier?.price || 0);
       }, 0);
 
@@ -97,9 +117,10 @@ export async function getTopEventByOwner(req,res)  {
 
     const topEvent = enriched[0] || null;
 
-    res.json(topEvent);
+      res.status(200).json({ 
+      topEvent : topEvent
+    });
   } catch (error) {
-    console.error('Error fetching top event:', error);
     res.status(500).json({ message: 'Failed to fetch top event' });
   }
 }

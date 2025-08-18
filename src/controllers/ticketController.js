@@ -1,16 +1,16 @@
-import { create ,findTicketsBySessionId,getAllTickets ,getLastUserTicket,countFailedAttemptsForUser ,createFailedAttempt} from '../models/TicketModel.js';
+import { create ,findTicketsBySessionId,getAllTickets ,getLastUserTicket,countFailedAttemptsForUser ,createFailedAttempt, findTicket, updatedTicketsStatus, findManyTickets, updateTicket} from '../models/TicketModel.js';
 import {findTicketsById,reduceCapacity , findTier} from '../models/PricingTier.js';
 import {findUserById} from '../models/UserModel.js';
 import { getEventById } from '../models/EventModel.js';
 import { stripe } from '../utils/stripe.js';
-import { sendTicketEmail , sendSuspiciousActivityEmail } from '../utils/mailer.js';
+import { sendTicketEmail , sendSuspiciousActivityEmail , sendRefundConfirmationEmail} from '../utils/mailer.js';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import axios from 'axios';
 import {sendFraudAlert} from '../sockets/index.js';
 import { saveNotification } from '../models/NotificationModel.js';
-
+import { RefundStatus,RefundType  } from '../utils/prisma.js';
 export const getAvailableTierWithQuantity = async (tierId) => {
   const tier = await findTicketsById(tierId);
   if (!tier) {throw new Error(`Tier ${tierId} not found`);}
@@ -42,7 +42,10 @@ export const createCheckoutSession = async (req, res) => {
         unit_amount: Math.round(tier.price * 100),
       },
       quantity,
-    }));
+    }
+  )
+
+);
 
     const totalAmount = validatedTiers.reduce((sum, { tier, quantity }) => sum + tier.price * quantity, 0);
     const totalQuantity = tierQuantities.reduce((sum, t) => sum + t.quantity, 0);
@@ -186,8 +189,9 @@ export const handleStripeWebhook = async (req, res) => {
             const ticketUUID = uuidv4();
             const { pngUrl, asciiQR } = await generateQrCodeData(ticketUUID);
             const stripeSessionId = session.id;
+            const paymentIntentId = session.payment_intent;
 
-            const ticket = await create(eventId, tierId, date, userId, stripeSessionId, ticketUUID, pngUrl);
+            const ticket = await create(eventId, tierId, date, userId, stripeSessionId,paymentIntentId, ticketUUID, pngUrl);
             if (!ticketsMap.has(tierId)) {
               ticketsMap.set(tierId, {
                 tierName: tier.name,
@@ -324,3 +328,143 @@ export const getAllTicketsByUserIdGroupByCreatedDate = async (req,res) => {
      res.status(500).json({ error: error.message });
   }
 }
+
+const calculateRefundAmount = async (ticket) => {
+  const tier = await findTier(ticket.tierId);
+  switch (tier.refundType) {
+    case RefundType.FULL_REFUND:
+      return tier.price;
+    case RefundType.PARTIAL_REFUND:
+      return tier.price * (tier.refundPercentage / 100);
+    default:
+      return 0;
+  }
+};
+
+const validateRefund = async (ticketId) => {
+  const ticket = await findTicket(ticketId);
+  
+  if (!ticket) {
+    throw new Error('Ticket not found');
+  }
+
+  const tier = await findTier(ticket.tierId);
+
+  if (ticket.refundStatus !== RefundStatus.NONE) {
+    throw new Error('Refund already processed or requested');
+  }
+
+  if (new Date() > new Date(ticket.date)) {
+    throw new Error('Event already occurred');
+  }
+
+  if (tier.refundType === RefundType.NO_REFUND) {
+    throw new Error('Refunds not allowed for this ticket');
+  }
+
+  if ([RefundType.FULL_REFUND, RefundType.PARTIAL_REFUND].includes(tier.refundType)) {
+    const refundDeadline = new Date(ticket.date);
+    refundDeadline.setDate(refundDeadline.getDate() - tier.refundDays);
+
+    if (new Date() > refundDeadline) {
+      throw new Error(`Refund deadline passed (${refundDeadline.toLocaleString()})`);
+    }
+  }
+
+  return { ticket, tier }; 
+};
+
+export const processStripeRefund = async (ticket, amount) => {
+  try {
+    const paymentIntent = await stripe.paymentIntents.retrieve(
+      ticket.stripePaymentId,
+      { expand: ['latest_charge'] }
+    );
+
+    if (!paymentIntent.latest_charge) {
+      throw new Error('Payment not completed or charge missing');
+    }
+
+    const charge = await stripe.charges.retrieve(paymentIntent.latest_charge.id, {
+      expand: ['refunds.data']
+    });
+    const amountRefunded = charge.refunds?.data.reduce(
+      (sum, refund) => sum + refund.amount, 
+      0
+    ) || 0;
+    const amountRemaining = paymentIntent.amount - amountRefunded;
+    const amountInCents = Math.round(amount * 100);
+    if (amountInCents > amountRemaining) {
+      throw new Error(`Only $${(amountRemaining/100).toFixed(2)} available for refund`);
+    }
+
+    return await stripe.refunds.create({
+      charge: charge.id,
+      amount: amountInCents,
+      metadata: {
+        ticketId: ticket.id,
+        eventId: ticket.eventId
+      }
+    });
+  } catch (error) {
+    console.error('Stripe refund error:', error);
+    throw new Error(`Payment processing failed: ${error.message}`);
+  }
+};
+
+export const refundTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const { ticket, tier } = await validateRefund(ticketId);
+    const amountToRefund = await calculateRefundAmount(ticket);
+    console.log("amountToRefund",amountToRefund)
+    const refund = await processStripeRefund(ticket, amountToRefund);
+
+    await updateTicket(ticketId, {
+      refundStatus: 'PROCESSED',
+      refundAmount: amountToRefund,
+      refundProcessDate: new Date()
+    });
+
+    const siblingTickets = await findManyTickets({
+      stripePaymentId: ticket.stripePaymentId,
+      id: { not: ticketId }
+    });
+    if (siblingTickets.length > 0) {
+      await updatedTicketsStatus({
+        where: {
+          stripePaymentId: ticket.stripePaymentId,
+          refundStatus: RefundStatus.NONE
+        },
+        data: {
+          refundStatus: RefundType.PARTIAL_REFUND
+        }
+      });
+    }
+
+    const event = await getEventById(ticket.eventId);
+    await saveNotification(req.user.id,`Your refund for ticket (${tier.name}) to "${event.title}" has been processed. 
+            Amount refunded: $${amountToRefund.toFixed(2)}. `)
+    await sendRefundConfirmationEmail(req.user.email, {
+      eventTitle: event.title,
+      ticketType: tier.name,
+      amount: amountToRefund,
+      policyType: event.refundType,
+      remainingTickets: siblingTickets.length
+    });
+
+    res.status(200).json({ 
+      success: true, 
+      refund,
+      amountRefunded: amountToRefund
+    });
+
+  } catch (error) {
+    console.error('Refund failed:', error);
+    res.status(400).json({ 
+      success: false,
+      error: error.message,
+      code: error.code 
+    });
+  }
+};

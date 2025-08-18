@@ -6,9 +6,9 @@ export async function createEvent(req, res) {
     const filename = req.file?.filename;
     const ownerId = req.user.id;
     if (!filename) {
-    return res.status(400).json({ error: 'No image file uploaded' });
-  }
-  const requiredFields = ['title', 'category', 'description'];
+      return res.status(400).json({ error: 'No image file uploaded' });
+    }
+    const requiredFields = ['title', 'category', 'description'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
     
     if (missingFields.length > 0) {
@@ -17,22 +17,29 @@ export async function createEvent(req, res) {
         fields: missingFields 
       });
     }
-     const dates = req.body.dates ? JSON.parse(req.body.dates) : [];
-     const pricingTiers = req.body.pricingTiers ? JSON.parse(req.body.pricingTiers) : [];
-      const eventData = {
+    const dates = req.body.dates ? JSON.parse(req.body.dates) : [];
+    for (const date of dates) {
+      if (!date.pricingTiers || !Array.isArray(date.pricingTiers) || date.pricingTiers.length === 0) {
+        return res.status(400).json({
+          error: 'Each event date must have at least one pricing tier',
+          date: date.date
+        });
+      }
+    }
+
+    const eventData = {
       title: req.body.title,
       category: req.body.category,
       description: req.body.description,
       ownerId,
       image: `/uploads/${filename}`,
-      dates,
-      pricingTiers,
+      dates, 
     };
 
     const event = await eventModel.createEvent(eventData);
-    res.status(201).json(event);
+    res.status(200).json(event);
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to create event' });
+     res.status(500).json({ error: error.message});
   }
 }
 
@@ -40,6 +47,10 @@ export async function editEvent(req, res) {
   try {
     const ownerId = req.user.id;
     const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ error: 'Event ID is required' });
+    }
     const requiredFields = ['title', 'category', 'description'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
     
@@ -51,13 +62,13 @@ export async function editEvent(req, res) {
     }
 
     const dates = req.body.dates ? JSON.parse(req.body.dates) : [];
-    const pricingTiers = req.body.pricingTiers ? JSON.parse(req.body.pricingTiers) : [];
-    let imagePath;
-    if (req.file) {
- 
-      imagePath = `/uploads/${req.file.filename}`;
-    } else if (req.body.image) {
-      imagePath = req.body.image;
+    for (const date of dates) {
+      if (!date.pricingTiers || !Array.isArray(date.pricingTiers) || date.pricingTiers.length === 0) {
+        return res.status(400).json({
+          error: 'Each event date must have at least one pricing tier',
+          date: date.date
+        });
+      }
     }
 
     const updateData = {
@@ -65,25 +76,27 @@ export async function editEvent(req, res) {
       category: req.body.category,
       description: req.body.description,
       dates,
-      pricingTiers
     };
-    if (imagePath !== undefined) {
-      updateData.image = imagePath;
+
+    if (req.file) {
+      updateData.image = `/uploads/${req.file.filename}`;
+    } else if (req.body.image) {
+      updateData.image = req.body.image;
     }
 
     const updatedEvent = await eventModel.editEvent(id, ownerId, updateData);
-    
+
     if (!updatedEvent) {
       return res.status(404).json({ error: 'Event not found or not owned by you' });
     }
 
-    res.json({
+    return res.status(200).json({
       message: 'Event updated successfully',
-      updatedEvent
+      event: updatedEvent
     });
 
   } catch (error) {
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to update event',
       details: error.message 
     });
@@ -198,7 +211,6 @@ export async function getRecommendedEvents(req, res) {
       .filter(Boolean);
     return res.json({ events: sortedEvents });
   } catch (error) {
-    console.error(error);
     return res.status(500).json({ error: 'Failed to get recommendations' });
   }
 }

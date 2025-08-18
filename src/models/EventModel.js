@@ -1,7 +1,6 @@
 import { prisma } from '../utils/prisma.js';
 
 export async function createEvent(data) {
-    
   const {
     title,
     category,
@@ -9,7 +8,6 @@ export async function createEvent(data) {
     image,
     ownerId,
     dates,
-    pricingTiers,
   } = data;
 
   return prisma.events.create({
@@ -20,71 +18,142 @@ export async function createEvent(data) {
       image,
       ownerId,
       dates: {
-        create: dates.map(({ date, location }) => ({
+        create: dates.map(({ date, location, pricingTiers }) => ({
           date: new Date(date),
           location,
-        })),
-      },
-      pricingTiers: {
-        create: pricingTiers.map(({ name, price ,capacity}) => ({
-          name,
-          price: parseFloat(price),
-          capacity: Number(capacity),
+          pricingTiers: {
+            create: pricingTiers.map(({ name, price, capacity, refundType, refundDays, refundPercentage }) => ({
+              name,
+              price: parseFloat(price),
+              capacity: Number(capacity),
+              refundType: refundType,
+              refundDays: Number(refundDays),
+              refundPercentage: Number(refundPercentage),
+            })),
+          },
         })),
       },
     },
     include: {
-      dates: true,
-      pricingTiers: true,
+      dates: {
+        include: {
+          pricingTiers: true,
+        },
+      },
     },
   });
 }
 
 export async function editEvent(id, ownerId, data) {
-  const { title, category, description, image, dates, pricingTiers } = data;
+  const {  dates = [] } = data;
 
   return await prisma.$transaction(async (prisma) => {
     const existingEvent = await prisma.events.findFirst({
-      where: { id, ownerId }
-    });
-    if (!existingEvent) {return null;}
-    const event = await prisma.events.update({
-      where: { id },
-      data: {
-        title,
-        category,
-        description,
-        image,
-        updatedAt: new Date()
+      where: { 
+        id: id,
+        ownerId: ownerId 
+      },
+      include: {
+        dates: {
+          include: { pricingTiers: true }
+        }
       }
     });
-    await prisma.eventDate.deleteMany({ where: { eventId: id } });
-    if (dates.length > 0) {
-      await prisma.eventDate.createMany({
-        data: dates.map(date => ({
-          date: new Date(date.date),
-          location: date.location,
-          eventId: id
-        }))
+    
+    if (!existingEvent) {
+      throw new Error('Event not found or not owned by you');
+    }
+
+    const existingDateIds = existingEvent.dates.map(d => d.id);
+    const incomingDateIds = dates.map(d => d.id).filter(Boolean);
+    
+    const datesToDelete = existingDateIds.filter(id => !incomingDateIds.includes(id));
+    if (datesToDelete.length > 0) {
+      await prisma.eventDate.deleteMany({
+        where: { id: { in: datesToDelete } }
       });
     }
-    await prisma.pricingTier.deleteMany({ where: { eventId: id } });
-    if (pricingTiers.length > 0) {
-      await prisma.pricingTier.createMany({
-        data: pricingTiers.map(tier => ({
-          name: tier.name,
-          price: parseFloat(tier.price),
-          capacity: Number(tier.capacity),
-          eventId: id
-        }))
-      });
+
+    for (const dateData of dates) {
+      if (dateData.id && existingDateIds.includes(dateData.id)) {
+        await prisma.eventDate.update({
+          where: { id: dateData.id },
+          data: {
+            date: new Date(dateData.date),
+            location: dateData.location,
+          }
+        });
+      } else {
+        await prisma.eventDate.create({
+          data: {
+            date: new Date(dateData.date),
+            location: dateData.location,
+            eventId: id,
+          }
+        });
+      }
     }
+
+    const currentDates = await prisma.eventDate.findMany({
+      where: { eventId: id }
+    });
+
+    for (const date of currentDates) {
+      const dateData = dates.find(d => 
+        (d.id && d.id === date.id) || 
+        (!d.id && new Date(d.date).getTime() === date.date.getTime() && d.location === date.location)
+      );
+
+      if (dateData && dateData.pricingTiers) {
+        const existingTiers = await prisma.pricingTier.findMany({
+          where: { dateId: date.id }
+        });
+        const existingTierIds = existingTiers.map(t => t.id);
+        const incomingTierIds = dateData.pricingTiers.map(t => t.id).filter(Boolean);
+
+        const tiersToDelete = existingTierIds.filter(id => !incomingTierIds.includes(id));
+        if (tiersToDelete.length > 0) {
+          await prisma.pricingTier.deleteMany({
+            where: { id: { in: tiersToDelete } }
+          });
+        }
+
+        for (const tierData of dateData.pricingTiers) {
+          const tierUpdateData = {
+            name: tierData.name,
+            price: parseFloat(tierData.price),
+            capacity: Number(tierData.capacity),
+            refundType: tierData.refundType,
+            refundDays: tierData.refundType === 'No Refund' ? null : Number(tierData.refundDays),
+            refundPercentage: tierData.refundType === 'No Refund' || tierData.refundType === 'Full Refund' 
+              ? null 
+              : Number(tierData.refundPercentage)
+          };
+
+          if (tierData.id && existingTierIds.includes(tierData.id)) {
+            await prisma.pricingTier.update({
+              where: { id: tierData.id },
+              data: tierUpdateData
+            });
+          } else {
+            await prisma.pricingTier.create({
+              data: {
+                ...tierUpdateData,
+                dateId: date.id
+              }
+            });
+          }
+        }
+      }
+    }
+
     return await prisma.events.findUnique({
       where: { id },
       include: {
-        dates: true,
-        pricingTiers: true
-      }
+        dates: {
+          include: { pricingTiers: true },
+        },
+      },
     });
   });
 }
@@ -106,115 +175,81 @@ export async function deleteEvent(eventId, ownerId) {
   });
 }
 
-export async function getAllEventByFilter(filters, pagination) {
-  const page = parseInt(pagination?.page || 1, 10);
-  const limit = parseInt(pagination?.limit || 10, 10);
-  const skip = (page - 1) * limit;
-  const take = limit;
-  let { keyword, category, dateRange } = filters;
-
-  if (typeof dateRange === 'string') {
-    dateRange = dateRange.split(',');
-  }
-
-  const today = new Date();
-
-  const where = {
-    ...(keyword && {
-      title: {
-        contains: keyword,
-        mode: 'insensitive',
-      },
-    }),
-    ...(category && { category }),
-    dates: {
-      some: {
-        date: {
-          gte: today,
-        },
-        ...(dateRange && dateRange.length === 2 && {
-          AND: [
-            { date: { gte: new Date(dateRange[0]) } },
-            { date: { lte: new Date(dateRange[1]) } },
-          ],
-        }),
-      },
-    },
-  };
-
-  const total = await prisma.events.count({ where });
-
-  const events = await prisma.events.findMany({
-    where,
-    include: {
-      dates: true,
-      pricingTiers: true,
-    },
-    skip,
-    take,
-  });
-
-  return {
-    total,
-    data: events,
-  };
-}
-
-export async function getEventsByOwnerIdWithFilters(ownerId, filters, pagination) {
-  const { skip = 0, take = 10 } = pagination || {};
-  let { keyword, category, dateRange } = filters;
-
-  if (typeof dateRange === 'string') {
-    dateRange = dateRange.split(',');
-  }
-
-  const where = {
-    ownerId,
-    ...(keyword && {
-      title: {
-        contains: keyword,
-        mode: 'insensitive',
-      },
-    }),
-    ...(category && { category }),
-    dates: {
-      some: {
-        ...(dateRange && dateRange.length === 2 && {
-          date: {
-            gte: new Date(dateRange[0]),
-            lte: new Date(dateRange[1]),
-          },
-        }),
-      },
-    },
-  };
-
-  const total = await prisma.events.count({ where });
-
-  const events = await prisma.events.findMany({
-    where,
-    include: {
-      dates: true,
-      pricingTiers: true,
-    },
-    skip,
-    take,
-  });
-
-  return {
-    total,
-    data: events,
-  };
-}
-
-export async function getEventById(eventId) {
-  return prisma.events.findUnique({
+export async function getAllEventByFilter(filters, { skip, take }) {
+  return prisma.events.findMany({
     where: {
-      id: eventId,
+      ...(filters.category && { category: filters.category }),
+      ...(filters.keyword && {
+        OR: [
+          { title: { contains: filters.keyword, mode: 'insensitive' } },
+          { description: { contains: filters.keyword, mode: 'insensitive' } },
+        ]
+      }),
     },
     include: {
-      dates: true,
-      pricingTiers: true,
+      dates: {
+        include: {
+          pricingTiers: true,
+        },
+      },
+      tickets: true,
+      favorites: true,
+      owner: true,
+    },
+    skip,
+    take,
+  });
+}
+
+export async function getEventsByOwnerIdWithFilters(ownerId, { keyword, category, dateRange }, { skip, take }) {
+  return prisma.events.findMany({
+    where: {
+      ownerId,
+      ...(category && { category }),
+      ...(keyword && {
+        OR: [
+          { title: { contains: keyword, mode: 'insensitive' } },
+          { description: { contains: keyword, mode: 'insensitive' } },
+        ]
+      }),
+      ...(dateRange && {
+        dates: {
+          some: {
+            date: {
+              gte: new Date(dateRange.start),
+              lte: new Date(dateRange.end),
+            },
+          },
+        },
+      }),
+    },
+    include: {
+      dates: {
+        include: {
+          pricingTiers: true,
+        },
+      },
+      tickets: true,
+      favorites: true,
+      owner: true,
+    },
+    skip,
+    take,
+  });
+}
+
+export async function getEventById(id) {
+  return prisma.events.findUnique({
+    where: { id },
+    include: {
+      dates: {
+        include: {
+          pricingTiers: true,
+        },
+      },
+      tickets: true,
+      favorites: true,
+      owner: true,
     },
   });
 }
@@ -231,8 +266,11 @@ export async function getEventsByIds(eventIds) {
       }
     },
     include: {
-      dates: true,
-      pricingTiers: true,
+      dates: {
+        include: {
+          pricingTiers: true, 
+        }
+      },
     },
   });
 }
@@ -262,20 +300,44 @@ export async function getFavoriteEventsByUserId(userId) {
     include: {
       event: {
         include: {
-          dates: true,
-          pricingTiers: true,
+          dates: {
+            include: {
+              pricingTiers: true, 
+            },
+          },
         },
       },
     },
   });
 }
 
-export async function getAllEventsByOwnerID (userId){
+export async function getAllEventsByOwnerID(userId) {
   return await prisma.events.findMany({
     where: { ownerId: userId },
     include: {
-      tickets: true,
-      pricingTiers: true
+      tickets: {
+        select: {
+          id: true,
+          userId: true,
+          tierId: true,
+          createdAt: true
+        }
+      },
+      dates: {
+        include: {
+          pricingTiers: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              capacity: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: {
+      createdAt: 'desc'
     }
   });
 }
@@ -289,7 +351,6 @@ export async function countUpcomingEventsByOwnerId(ownerId) {
         AND d.date > CURRENT_DATE
     `; 
   const totalComingEvents = Number(result[0].totalcommingevents);
-  
   return totalComingEvents;
 }
 
@@ -301,16 +362,19 @@ export async function getNewArrivals() {
       dates: {
         some: {
           date: {
-            gte: now
-          }
-        }
-      }
+            gte: now,
+          },
+        },
+      },
     },
     orderBy: { createdAt: 'desc' },
     take: 10,
     include: {
-      dates: true,
-      pricingTiers: true,
+      dates: {
+        include: {
+          pricingTiers: true, 
+        },
+      },
     },
   });
 }

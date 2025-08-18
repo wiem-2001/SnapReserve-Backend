@@ -491,7 +491,6 @@ export const googleAuthCallback = async (req, res) => {
 
     res.redirect(`${process.env.FRONTEND_URL}`);
   } catch (error) {
-    console.error('Error logging device:', error);
     return res.redirect(`${process.env.FRONTEND_URL}/signin?error=device_logging_failed`);
   }
 };
@@ -523,7 +522,6 @@ export const facebookCallback = async (req, res) => {
 
     res.redirect(`${process.env.FRONTEND_URL}`);
   } catch (error) {
-    console.error('Error logging device:', error);
     return res.redirect(`${process.env.FRONTEND_URL}/signin?error=device_logging_failed`);
   }
 };
@@ -547,7 +545,6 @@ export const deleteUser = async (req, res) => {
     res.status(200).json({ message: 'Account and related data deleted successfully.' });
 
   } catch (error) {
-    console.error('Error deleting user:', error);
     res.status(500).json({ message: 'Failed to delete account.' });
   }
 };

@@ -1,12 +1,13 @@
-import { prisma } from '../utils/prisma.js';
+import { prisma,RefundStatus } from '../utils/prisma.js';
 
-export const create = async (eventId, tierId, date, userId, stripeSessionId,ticketUUID,qrImageBase64) => {
+export const create = async (eventId, tierId, date, userId, stripeSessionId,paymentIntentId,ticketUUID,qrImageBase64) => {
   return  prisma.ticket.create({
               data: {
                 eventId,
                 tierId,
                 date: new Date(date),
                 userId,
+                stripePaymentId: paymentIntentId,
                 stripeSessionId: stripeSessionId,
                 uuid: ticketUUID,
                 qrCodeUrl: qrImageBase64,
@@ -17,10 +18,6 @@ export const create = async (eventId, tierId, date, userId, stripeSessionId,tick
             });
             
 };
-
-export const findOneTicket = async (tierId) => {
-  return await prisma.pricingTier.findUnique({ where: { id: tierId } });
-}
 
 export const findTicketsBySessionId =async (sessionId,userId) => {
     return await prisma.ticket.findMany({
@@ -91,9 +88,10 @@ export const createFailedAttempt = async ({ userId, eventId, intent }) => {
 export const countTotalRevenueThisYear = async (ownerId) => {
   const [result] = await prisma.$queryRaw`
     SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
-    FROM events e
-    JOIN "pricingTier" pt ON pt."eventId" = e.id
-    JOIN "Ticket" t ON t."tierId" = pt.id
+    FROM "Ticket" t
+    JOIN "pricingTier" pt ON t."tierId" = pt.id
+    JOIN "eventDate" ed ON pt."dateId" = ed.id
+    JOIN "events" e ON ed."eventId" = e.id
     WHERE e."ownerId" = ${ownerId}
       AND EXTRACT(YEAR FROM t."createdAt") = EXTRACT(YEAR FROM CURRENT_DATE);
   `;
@@ -105,40 +103,61 @@ export const countTotalRevenueThisYear = async (ownerId) => {
 export const countLastYearRevenue = async (ownerId) => {
   const [result] = await prisma.$queryRaw`
     SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
-    FROM events e
-    JOIN "pricingTier" pt ON pt."eventId" = e.id
-    JOIN "Ticket" t ON t."tierId" = pt.id
+    FROM "Ticket" t
+    JOIN "pricingTier" pt ON t."tierId" = pt.id
+    JOIN "eventDate" ed ON pt."dateId" = ed.id
+    JOIN "events" e ON ed."eventId" = e.id
     WHERE e."ownerId" = ${ownerId}
       AND EXTRACT(YEAR FROM t."createdAt") = EXTRACT(YEAR FROM CURRENT_DATE) - 1;
   `;
+
   return result.total_earnings;
 };
 
-export const countLastMonthRevenueThisMonth = async (ownerId) => {
+export const countLastMonthRevenue = async (ownerId) => {
   const [result] = await prisma.$queryRaw`
     SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
-    FROM events e
-    JOIN "pricingTier" pt ON pt."eventId" = e.id
-    JOIN "Ticket" t ON t."tierId" = pt.id
+    FROM "Ticket" t
+    JOIN "pricingTier" pt ON t."tierId" = pt.id
+    JOIN "eventDate" ed ON pt."dateId" = ed.id
+    JOIN "events" e ON ed."eventId" = e.id
     WHERE e."ownerId" = ${ownerId}
       AND t."createdAt" >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
       AND t."createdAt" < DATE_TRUNC('month', CURRENT_DATE);
   `;
-
   return result.total_earnings;
 };
 
-export const countRevenueOfMonthBeforeLast = async (ownerId) => {
+export const countRevenueOfCurrentMonth = async (ownerId) => {
   const [result] = await prisma.$queryRaw`
     SELECT COALESCE(SUM(pt.price), 0) AS total_earnings
-    FROM events e
-    JOIN "pricingTier" pt ON pt."eventId" = e.id
-    JOIN "Ticket" t ON t."tierId" = pt.id
+    FROM "Ticket" t
+    JOIN "pricingTier" pt ON t."tierId" = pt.id
+    JOIN "eventDate" ed ON pt."dateId" = ed.id
+    JOIN "events" e ON ed."eventId" = e.id
     WHERE e."ownerId" = ${ownerId}
-      AND t."createdAt" >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '2 month')
-      AND t."createdAt" < DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month');
+      AND t."createdAt" >= DATE_TRUNC('month', CURRENT_DATE)
+      AND t."createdAt" < DATE_TRUNC('month', CURRENT_DATE + INTERVAL '1 month');
   `;
   return result.total_earnings;
+};
+
+export const completionAndCancelationRate = async (ownerId) => {
+  const [result] = await prisma.$queryRaw`
+    SELECT 
+    COUNT(*) AS total_tickets,
+    COUNT(CASE WHEN t."refundStatus" = 'PROCESSED' THEN 1 END) AS cancelled_tickets,
+    COUNT(CASE WHEN t."refundStatus" = 'NONE' THEN 1 END) AS completed_tickets
+    FROM "Ticket" t
+    JOIN "events" e ON t."eventId" = e.id
+    WHERE e."ownerId" = ${ownerId};
+  `;
+  const formatted = {
+    total_tickets: Number(result.total_tickets),
+    cancelled_tickets: Number(result.cancelled_tickets),
+    completed_tickets: Number(result.completed_tickets),
+  };
+  return formatted;
 };
 
 export const  repeatCount = async (userId) => {
@@ -157,7 +176,7 @@ export const  repeatCount = async (userId) => {
 });
 }
 
-export async function getTicketsBenMarking(userId) {
+export const getTicketsBenMarking = async(userId) => {
   const now = new Date();
   const trends = [];
 
@@ -223,3 +242,38 @@ export const ticketcountByEventOwnerId = async (userId) => {
         },
       },
     });}
+
+  export const findTicket = async(ticketId) => {
+    return await prisma.ticket.findUnique({
+      where: { id: ticketId},
+      include: { tier: true }
+    });
+  }
+
+export const updatedTicketsStatus = async (ticket) => {
+return  await prisma.ticket.updateMany({
+        where: {
+          stripePaymentId: ticket.stripePaymentId,
+          id: { not: ticket.id }
+        },
+        data: {
+          refundStatus: RefundStatus.PARTIAL_REFUND
+        }
+      });
+}
+
+export const findManyTickets = async (ticket) => {
+  return await prisma.ticket.findMany({
+      where: {
+        stripePaymentId: ticket.stripePaymentId,
+        userId: ticket.userId
+      }
+    });
+}
+
+export const updateTicket = async (ticketId, updateData) => {
+  return await prisma.ticket.update({
+    where: { id: ticketId },
+    data: updateData
+  });
+}

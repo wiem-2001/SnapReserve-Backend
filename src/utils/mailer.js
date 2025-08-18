@@ -232,3 +232,42 @@ export const sendSuspiciousActivityEmail = async (to) => {
 
   return transporter.sendMail(mailOptions);
 };
+
+  export const sendRefundConfirmationEmail = async (to, refundDetails) => {
+  const mailOptions = {
+    from: `"SnapReserve" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `Refund Initiated for ${refundDetails.eventTitle}`,
+    html: `
+      <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #021529; padding: 20px; text-align: center;">
+          <h1 style="color: #ffd72d; margin: 0;">SnapReserve</h1>
+        </div>
+
+        <div style="padding: 20px; background-color: #ffffff;">
+          <h2 style="color: #021529;">Your Refund is Being Processed</h2>
+          <p>We've received your refund request for:</p>
+          
+          <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p style="margin: 5px 0;"><strong>Event:</strong> ${refundDetails.eventTitle}</p>
+            <p style="margin: 5px 0;"><strong>Ticket Type:</strong> ${refundDetails.ticketType}</p>
+            <p style="margin: 5px 0;"><strong>Amount to Refund:</strong> $${refundDetails.amount.toFixed(2)}</p>
+            <p style="margin: 5px 0;"><strong>Refund Policy:</strong> ${refundDetails.policyType}</p>
+          </div>
+
+          <p>Please allow 5-10 business days for the amount to appear in your original payment method.</p>
+          
+          <p style="margin-top: 40px; color: #888;">
+            Questions? Contact our <a href="mailto:support@snapreserve.com" style="color: #021529;">support team</a>
+          </p>
+        </div>
+        
+        <div style="background-color: #f5f5f5; padding: 10px; text-align: center; font-size: 12px; color: #999;">
+          &copy; ${new Date().getFullYear()} SnapReserve. All rights reserved.
+        </div>
+      </div>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+};
