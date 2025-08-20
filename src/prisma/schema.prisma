@@ -39,6 +39,8 @@ model users {
   favorites              Favorite[]
   devices                UserDevice[]
   suspiciousActivity     SuspiciousActivity[]
+  first_login_gift       Boolean      @default(true)
+  welcome_gift_expiry     DateTime?
 
 }
 

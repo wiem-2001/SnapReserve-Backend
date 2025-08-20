@@ -108,11 +108,19 @@ export const sendResetPasswordEmail = async ({ to, subject, text, user, resetUrl
   await transporter.sendMail(mailOptions);
 };
 
-export const sendTicketEmail = async ({ to, userName, tickets, orderDate, totalAmount }) => {
+export const sendTicketEmail = async ({ 
+  to, 
+  userName, 
+  tickets, 
+  orderDate, 
+  totalAmount,
+  wasDiscountApplied = false,
+  originalTotal = null,
+  discountAmount = null 
+}) => {
   const ticketsHtml = tickets.map(ticket => {
     const qrBlocks = ticket.qrCodeUrls.map((url, index) => `
       <div style="margin:10px 0; padding:15px;">
-     
         <div style="margin-bottom:15px; border-bottom:1px solid #f0f0f0; padding-bottom:10px;">
           <h3 style="margin:0 0 5px 0; color:#021529;">${ticket.eventTitle}</h3>
           <p style="margin:3px 0; font-size:14px;">
@@ -168,6 +176,23 @@ ${ticket.asciiQRs[index]}
     `;
   }).join('');
 
+  const discountHtml = wasDiscountApplied ? `
+    <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 15px; margin: 20px 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span style="font-weight: bold; color: #52c41a;">
+          🎉 20% Welcome Discount Applied! 
+        </span>
+        <span style="color: #52c41a; font-weight: bold;">
+          -You payed $${discountAmount.toFixed(2)}
+        </span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: #666;">
+        <span>Original Price:</span>
+        <span style="text-decoration: line-through;">$${originalTotal.toFixed(2)}</span>
+      </div>
+    </div>
+  ` : '';
+
   const mailOptions = {
     from: `"SnapReserve" <${process.env.EMAIL_USER}>`,
     to,
@@ -188,7 +213,11 @@ ${ticket.asciiQRs[index]}
             <li>Event details (date, location)</li>
             <li>Ticket type and unique ID</li>
           </ul>
+          
+          ${discountHtml}
+          
           ${ticketsHtml}
+          
           <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
             <p style="font-weight: bold; font-size: 16px; color: #021529; text-align: right;">
               Total Paid: $${totalAmount.toFixed(2)}
@@ -201,7 +230,8 @@ ${ticket.asciiQRs[index]}
       </div>
     `,
   };
-    await transporter.sendMail(mailOptions);
+
+  await transporter.sendMail(mailOptions);
 };
 
 export const sendSuspiciousActivityEmail = async (to) => {

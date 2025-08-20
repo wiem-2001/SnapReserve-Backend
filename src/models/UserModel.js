@@ -193,3 +193,18 @@ export const getDevicesByUserId = async (userId) => {
 export const getKnownDevicesByUserId= async(userId) => {
   return await prisma.userDevice.findMany({ where: { userId } });
 }
+
+export const updateWelcomeGiftExpiry = async (userId) => {
+  const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  return await prisma.users.update({
+    where : {id:userId},
+    data : {welcome_gift_expiry:expiryDate}
+  })
+}
+
+export const updateFirstLoginGiftStatus =async (userId) => {
+  return await prisma.users.update({
+            where: { id: userId },
+            data: { first_login_gift: false }
+          });
+}

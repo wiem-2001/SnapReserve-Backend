@@ -1,6 +1,16 @@
-import { create ,findTicketsBySessionId,getAllTickets ,getLastUserTicket,countFailedAttemptsForUser ,createFailedAttempt, findTicket, updatedTicketsStatus, findManyTickets, updateTicket} from '../models/TicketModel.js';
+import { create ,
+  findTicketsBySessionId,
+  getAllTickets ,
+  getLastUserTicket,
+  countFailedAttemptsForUser ,
+  createFailedAttempt,
+  findTicket,
+  updatedTicketsStatus,
+  findManyTickets,
+  updateTicket,
+  } from '../models/TicketModel.js';
 import {findTicketsById,reduceCapacity , findTier} from '../models/PricingTier.js';
-import {findUserById} from '../models/UserModel.js';
+import {findUserById,updateFirstLoginGiftStatus} from '../models/UserModel.js';
 import { getEventById } from '../models/EventModel.js';
 import { stripe } from '../utils/stripe.js';
 import { sendTicketEmail , sendSuspiciousActivityEmail , sendRefundConfirmationEmail} from '../utils/mailer.js';
@@ -21,9 +31,12 @@ export const getAvailableTierWithQuantity = async (tierId) => {
 
 export const createCheckoutSession = async (req, res) => {
   const { eventId, tierQuantities, date } = req.body; 
-  const userId = req.user.id;
+  const user = req.user;
+try {
+    const isEligibleForDiscount = user.first_login_gift === true && 
+                                 user.welcome_gift_expiry && 
+                                 new Date() < user.welcome_gift_expiry;
 
-  try {
     const validatedTiers = await Promise.all(tierQuantities.map(async ({ tierId, quantity }) => {
       const { tier, availableTickets } = await getAvailableTierWithQuantity(tierId);
       if (availableTickets < quantity) {
@@ -32,33 +45,43 @@ export const createCheckoutSession = async (req, res) => {
       return { tier, quantity };
     }));
 
-    const line_items = validatedTiers.map(({ tier, quantity }) => ({
-      price_data: {
-        currency: 'usd',
-        product_data: {
-          name: `${tier.name} Ticket - ${new Date(date).toLocaleDateString()}`,
-          metadata: { eventId, date }
+    const line_items = validatedTiers.map(({ tier, quantity }) => {
+      let unitPrice = tier.price;
+      if (isEligibleForDiscount) {
+        unitPrice = tier.price * 0.8; 
+      }
+
+      return {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: `${tier.name} Ticket - ${new Date(date).toLocaleDateString()}`,
+            metadata: { eventId, date }
+          },
+          unit_amount: Math.round(unitPrice * 100),
         },
-        unit_amount: Math.round(tier.price * 100),
-      },
-      quantity,
-    }
-  )
+        quantity,
+      };
+    });
 
-);
+    const totalAmount = validatedTiers.reduce((sum, { tier, quantity }) => {
+      let price = tier.price;
+      if (isEligibleForDiscount) {
+        price = tier.price * 0.8;
+      }
+      return sum + price * quantity;
+    }, 0);
 
-    const totalAmount = validatedTiers.reduce((sum, { tier, quantity }) => sum + tier.price * quantity, 0);
     const totalQuantity = tierQuantities.reduce((sum, t) => sum + t.quantity, 0);
 
-    const lastTicket = await getLastUserTicket(userId);
+    const lastTicket = await getLastUserTicket(user.id);
     let timeSinceLastPurchase = 24.0;
     if (lastTicket) {
       const diffMs = Date.now() - new Date(lastTicket.createdAt).getTime();
       timeSinceLastPurchase = diffMs / (1000 * 60 * 60);
     }
 
-    const failedAttempts = await countFailedAttemptsForUser(userId);
-
+    const failedAttempts = await countFailedAttemptsForUser(user.id);
     const features = [totalAmount, totalQuantity, timeSinceLastPurchase, failedAttempts];
 
     try {
@@ -68,19 +91,28 @@ export const createCheckoutSession = async (req, res) => {
       if (prediction === -1) {
         if (req.user.email) {
           await sendSuspiciousActivityEmail(req.user.email);
-          sendFraudAlert(userId, {
-          message: 'Transaction blocked due to suspicious activity',
-          timestamp: new Date(),
-        });
-        saveNotification(userId, 'We noticed something unusual with your transaction and couldn’t complete it. If you think this was an error, please get in touch with support.');
+          sendFraudAlert(user.id, {
+            message: 'Transaction blocked due to suspicious activity',
+            timestamp: new Date(),
+          });
+          saveNotification(user.id, 'We noticed something unusual with your transaction and couldn’t complete it. If you think this was an error, please get in touch with support.');
         }
         return res.status(403).json({
           error: "Suspicious activity detected. Transaction blocked. Please contact support."
         });
       }
     } catch (error) {
-      return res.status(500).json({error: error.message });
+      return res.status(500).json({ error: error.message });
     }
+    const userId = req.user.id
+
+    const sessionMetadata = {
+      userId,
+      eventId,
+      date,
+      tierQuantities: JSON.stringify(tierQuantities),
+      wasWelcomeDiscountApplied: isEligibleForDiscount.toString()
+    };
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -88,22 +120,23 @@ export const createCheckoutSession = async (req, res) => {
       mode: 'payment',
       success_url: `${process.env.FRONTEND_URL}/purchase/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_URL}/purchase/cancel`,
-      metadata: {
-        userId,
-        eventId,
-        date,
-        tierQuantities: JSON.stringify(tierQuantities)
-      },
+      metadata: sessionMetadata,
       payment_intent_data: {
         metadata: {
           userId,
           eventId,
+          wasWelcomeDiscountApplied: isEligibleForDiscount.toString()
         }
       }
     });
 
+    if (isEligibleForDiscount) {
+     await updateFirstLoginGiftStatus(userId);
+    }
+
     res.status(200).json({ url: session.url });
   } catch (err) {
+    console.log(err.message)
     res.status(400).json({ error: err.message });
   }
 };
@@ -149,7 +182,8 @@ export const handleStripeWebhook = async (req, res) => {
     const intent = event.data.object;
     const metadata = intent.metadata || {};
     const userId = metadata.userId;
-    const eventId = metadata.eventId
+    const eventId = metadata.eventId;
+    
     try {
       if (userId) {
         await createFailedAttempt({ userId, eventId, intent });
@@ -165,15 +199,15 @@ export const handleStripeWebhook = async (req, res) => {
  
   if (eventType === 'checkout.session.completed') {
     const session = event.data.object;
-    const { userId, eventId, date, tierQuantities } = session.metadata || {};
+    const { userId, eventId, date, tierQuantities, wasWelcomeDiscountApplied } = session.metadata || {};
     if (session.payment_status === 'paid') {
-      const tiers = JSON.parse(tierQuantities || '[]');
-     
+      try {
+        const tiers = JSON.parse(tierQuantities || '[]');
         const user = await findUserById(userId);
-        if (!user) {throw new Error('User not found');}
+        if (!user) { throw new Error('User not found'); }
 
         const event = await getEventById(eventId);
-        if (!event) {throw new Error('Event not found');}
+        if (!event) { throw new Error('Event not found'); }
 
         const eventDate = event.dates[0];
         const createdTickets = [];
@@ -181,9 +215,9 @@ export const handleStripeWebhook = async (req, res) => {
 
         for (const { tierId, quantity } of tiers) {
           const tier = await findTier(tierId);
-          if (!tier) {throw new Error('Pricing tier not found');}
+          if (!tier) { throw new Error('Pricing tier not found'); }
 
-          await reduceCapacity(tier.id,quantity);
+          await reduceCapacity(tier.id, quantity);
 
           for (let i = 0; i < quantity; i++) {
             const ticketUUID = uuidv4();
@@ -191,7 +225,7 @@ export const handleStripeWebhook = async (req, res) => {
             const stripeSessionId = session.id;
             const paymentIntentId = session.payment_intent;
 
-            const ticket = await create(eventId, tierId, date, userId, stripeSessionId,paymentIntentId, ticketUUID, pngUrl);
+            const ticket = await create(eventId, tierId, date, userId, stripeSessionId, paymentIntentId, ticketUUID, pngUrl);
             if (!ticketsMap.has(tierId)) {
               ticketsMap.set(tierId, {
                 tierName: tier.name,
@@ -219,20 +253,38 @@ export const handleStripeWebhook = async (req, res) => {
         }
 
         const ticketsToSend = Array.from(ticketsMap.values());
-        const totalPaid = ticketsToSend.reduce((sum, t) => sum + t.price * t.quantity, 0);
-
-        await sendTicketEmail({
+        let totalPaid = ticketsToSend.reduce((sum, t) => sum + t.price * t.quantity, 0);
+        const originalTotal = totalPaid
+        const discountWasApplied = wasWelcomeDiscountApplied === 'true';
+        
+        if (discountWasApplied) {
+          totalPaid = totalPaid * 0.8; 
+        }
+        console.log("original ",totalPaid)
+        console.log("discount amount",totalPaid * 0.2)
+          await sendTicketEmail({
           to: user.email,
           userName: user.full_name || user.email,
           tickets: ticketsToSend,
           orderId: session.id,
           orderDate: new Date(),
-          totalAmount: totalPaid,
+          totalAmount: originalTotal,
+          wasDiscountApplied: discountWasApplied, 
+          originalTotal: discountWasApplied ? originalTotal : null, 
+          discountAmount: discountWasApplied ? totalPaid  : null 
         });
-    }
 
+        if (discountWasApplied && user.first_login_gift === true) {
+          await updateFirstLoginGiftStatus(userId)
+        }
+
+      } catch (error) {
+        console.error('Error processing successful payment:', error);
+      }
+    }
     return res.json({ received: true });
   }
+  
   return res.json({ received: true });
 };
 
@@ -241,12 +293,37 @@ export const getOrderDetails = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const tickets = await findTicketsBySessionId(sessionId,userId);
+    const tickets = await findTicketsBySessionId(sessionId, userId);
 
     if (tickets.length === 0) {
       return res.status(404).json({ error: 'No tickets found for this order.' });
     }
+
     const firstTicket = tickets[0];
+    
+    let wasDiscountApplied = false;
+    let originalTotal = 0;
+    let discountedTotal = 0;
+    
+    try {
+      const stripeSession = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['line_items.data.price.product'] 
+      });
+      
+      wasDiscountApplied = stripeSession.metadata?.wasWelcomeDiscountApplied === 'true';
+      
+      originalTotal = tickets.reduce((sum, ticket) => sum + ticket.tier.price, 0);
+      
+      if (wasDiscountApplied) {
+        discountedTotal = originalTotal * 0.8; 
+      }
+      
+    } catch (stripeError) {
+      console.error('Error fetching Stripe session:', stripeError);
+      wasDiscountApplied = false;
+      originalTotal = tickets.reduce((sum, ticket) => sum + ticket.tier.price, 0);
+      discountedTotal = originalTotal;
+    }
     const eventInfo = {
       id: firstTicket.event.id,
       title: firstTicket.event.title,
@@ -266,7 +343,7 @@ export const getOrderDetails = async (req, res) => {
         itemsMap.set(key, {
           name: `${ticket.tier.name} Ticket`,
           quantity: 0,
-          price: ticket.tier.price,
+          price: ticket.tier.price, 
           tickets: [] 
         });
       }
@@ -282,15 +359,18 @@ export const getOrderDetails = async (req, res) => {
     });
 
     const items = Array.from(itemsMap.values());
-    const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
+    
+    const displayTotal = wasDiscountApplied ? discountedTotal : originalTotal;
     const orderDetails = {
       orderId: sessionId,
       date: firstTicket.createdAt,
       email: req.user.email,
       event: eventInfo,
       items,
-      total,
+      total: displayTotal, 
+      wasDiscountApplied, 
+      originalTotal: wasDiscountApplied ? originalTotal : null, 
+      discountAmount: wasDiscountApplied ? originalTotal * 0.2 : null 
     };
 
     res.json(orderDetails);

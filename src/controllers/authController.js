@@ -19,12 +19,11 @@ import {
   updateUserProfile,
   findPasswordByUserId,
   deleteUserById,
-  getKnownDevicesByUserAgent ,
   getKnownDevicesByUserId,
   createSuspiciousLogin,
   createKnownDevice,
-  updateUserDevice ,
-  getDevicesByUserId
+  getDevicesByUserId,
+  updateWelcomeGiftExpiry
 } from '../models/UserModel.js';
 import jwt from 'jsonwebtoken';
 import { sendVerificationEmail, sendResetPasswordEmail } from '../utils/mailer.js';
@@ -197,12 +196,17 @@ export const signin = async (req, res) => {
     }
    
     await checkAndLogDevice(req, user.id);
+    if(user.role ==="attendee") {
+    await updateWelcomeGiftExpiry(user.id);
+    }
 
     const payload = {
       id: user.id,
       fullName: user.full_name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      first_login_gift:user.first_login_gift,
+      welcome_gift_expiry:user.welcome_gift_expiry
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -212,7 +216,7 @@ export const signin = async (req, res) => {
       sameSite: 'Strict',
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
-
+    
     res.status(200).json({
       message: 'Sign-in successful',
       token,
@@ -220,7 +224,8 @@ export const signin = async (req, res) => {
         id: user.id,
         email: user.email,
         fullName: user.full_name,
-        role: user.role
+        role: user.role,
+        first_login_gift:user.first_login_gift
       }
     });
   } catch (err) {
@@ -472,12 +477,17 @@ export const googleAuthCallback = async (req, res) => {
 
   try {
     await checkAndLogDevice(req, user.id); 
-
+ if(user.role ==="attendee") {
+    await updateWelcomeGiftExpiry(user.id);
+    }
     const payload = {
       id: user.id,
       fullName: user.full_name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      first_login_gift:user.first_login_gift,
+      welcome_gift_expiry:user.welcome_gift_expiry
+      
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
@@ -503,12 +513,16 @@ export const facebookCallback = async (req, res) => {
 
   try {
     await checkAndLogDevice(req, user.id); 
-
+ if(user.role ==="attendee") {
+    await updateWelcomeGiftExpiry(user.id);
+    }
     const payload = {
       id: user.id,
       fullName: user.full_name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      first_login_gift:user.first_login_gift,
+      welcome_gift_expiry:user.welcome_gift_expiry
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
