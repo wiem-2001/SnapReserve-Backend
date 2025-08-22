@@ -147,25 +147,97 @@ export const signup = async (req, res) => {
 
 export const verifyEmail = async (req, res) => {
   const token = req.query.token;
-
-  if (!token) {
-    return res.status(400).send('Verification token is missing');
-  }
-
   try {
-    const user = await findUserByVerificationToken(token);
-    if (!user) {
-      return res.status(400).send('Invalid or expired verification token');
+    const JWT_SECRET = process.env.JWT_SECRET;
+    let decoded;
+    
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (jwtError) {
+      if (jwtError.name === 'TokenExpiredError') {
+        return res.redirect(
+          `${process.env.FRONTEND_URL}/verify-expired?email=${encodeURIComponent(decoded?.email || '')}`
+        );
+      } else {
+        return res.redirect(`${process.env.FRONTEND_URL}/verify-expired?message=Invalid verification token`);
+      }
     }
+    const user = await findUserByVerificationToken(token);
 
     if (user.is_verified) {
-      return res.status(400).send('Account already verified');
+      return res.redirect(`${process.env.FRONTEND_URL}/verified`);
+    }
+
+    if (decoded.userId !== user.id) {
+      return res.redirect(`${process.env.FRONTEND_URL}/verify-expired?message=Token does not match user`);
     }
 
     await updateUserVerification(user.id);
+    
     res.redirect(`${process.env.FRONTEND_URL}/verified`);
   } catch (error) {
-    res.status(500).send('Server error during verification');
+    console.error('Verification error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/verify-expired?message=Server error during verification`);
+  }
+};
+
+export const resendVerificationEmail = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ 
+      success: false,
+      message: 'Email is required' 
+    });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ 
+      success: false,
+      message: 'Please provide a valid email address' 
+    });
+  }
+
+  try {
+    const user = await findUserByEmail(email);
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No account found with this email address' 
+      });
+    }
+    
+    if (user.is_verified) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Account is already verified. Please login instead.' 
+      });
+    }
+
+    const JWT_SECRET = process.env.JWT_SECRET;
+    const verificationToken = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '24h' } 
+    );
+    
+    await updateUserVerificationToken(user.id, verificationToken);
+    
+    await sendVerificationEmail(user.email, verificationToken);
+    
+    res.status(200).json({ 
+      success: true,
+      message: 'Verification email sent successfully. Please check your inbox.' 
+    });
+    console.log("email was sent successfully")
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error while processing your request. Please try again later.' 
+    });
   }
 };
 

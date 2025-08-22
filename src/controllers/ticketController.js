@@ -91,11 +91,19 @@ try {
       if (prediction === -1) {
         if (req.user.email) {
           await sendSuspiciousActivityEmail(req.user.email);
+           const tierNames = validatedTiers.map(v => v.tier.name).join(', ');
+           const formattedDate = new Date(date).toLocaleDateString();
+           
           sendFraudAlert(user.id, {
             message: 'Transaction blocked due to suspicious activity',
             timestamp: new Date(),
           });
-          saveNotification(user.id, 'We noticed something unusual with your transaction and couldn’t complete it. If you think this was an error, please get in touch with support.');
+          saveNotification(
+            user.id,
+            `We noticed something unusual with your transaction for ${tierNames} tickets on ${formattedDate} and couldn’t complete it. ` +
+            'If you believe this was a mistake, please ignore this and try again. ' +
+            'If not, we recommend securing your account and checking your credit card activity immediately.'
+          );
         }
         return res.status(403).json({
           error: "Suspicious activity detected. Transaction blocked. Please contact support."

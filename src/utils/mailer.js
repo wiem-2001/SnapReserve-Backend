@@ -107,7 +107,7 @@ export const sendResetPasswordEmail = async ({ to, subject, text, user, resetUrl
 
   await transporter.sendMail(mailOptions);
 };
-
+const purchasesUrl = process.env.FRONTEND_URL + '/purchased-tickets'
 export const sendTicketEmail = async ({ 
   to, 
   userName, 
@@ -161,7 +161,7 @@ ${ticket.asciiQRs[index]}
             <strong>Ticket ID:</strong> ${ticket.ticketIds[index]}
           </p>
           <p style="margin:5px 0;">
-            <a href="${ticket.textUrls[index]}" style="color:#0066cc;">View ticket online</a>
+            <a href="${purchasesUrl}" style="color:#0066cc;">View ticket online</a>
           </p>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup,signin , requestPasswordReset, resetPassword , logout, getMe , uploadProfileImage , updateProfile ,updateUserPassword, verifyEmail , googleAuthCallback , facebookCallback, deleteUser,getUserDevices} from '../controllers/authController.js'; 
+import { signup,signin , requestPasswordReset, resetPassword , logout, getMe , uploadProfileImage , updateProfile ,updateUserPassword, verifyEmail , resendVerificationEmail, googleAuthCallback , facebookCallback, deleteUser,getUserDevices} from '../controllers/authController.js'; 
 import { signupValidator } from '../validators/authValidator.js';
 import { validate } from '../middlewares/validate.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
@@ -10,6 +10,7 @@ const router = express.Router();
 
 router.post('/signup', signupValidator, validate, signup);
 router.get('/verify-email', verifyEmail);
+router.post('/resend-verification-email', resendVerificationEmail);
 router.post('/signin', validate, signin);
 router.post('/forgot-password', requestPasswordReset);
 router.post('/reset-password', resetPassword);
