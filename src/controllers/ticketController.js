@@ -93,7 +93,7 @@ try {
           await sendSuspiciousActivityEmail(req.user.email);
            const tierNames = validatedTiers.map(v => v.tier.name).join(', ');
            const formattedDate = new Date(date).toLocaleDateString();
-           
+
           sendFraudAlert(user.id, {
             message: 'Transaction blocked due to suspicious activity',
             timestamp: new Date(),
@@ -144,7 +144,6 @@ try {
 
     res.status(200).json({ url: session.url });
   } catch (err) {
-    console.log(err.message)
     res.status(400).json({ error: err.message });
   }
 };
@@ -192,16 +191,10 @@ export const handleStripeWebhook = async (req, res) => {
     const userId = metadata.userId;
     const eventId = metadata.eventId;
     
-    try {
       if (userId) {
         await createFailedAttempt({ userId, eventId, intent });
-      } else {
-        console.warn("No userId in failed payment intent metadata");
-      }
-    } catch (err) {
-      console.error("Failed to log payment failure:", err);
-    }
-
+      } 
+    
     return res.json({ received: true });
   }
  
@@ -268,8 +261,6 @@ export const handleStripeWebhook = async (req, res) => {
         if (discountWasApplied) {
           totalPaid = totalPaid * 0.8; 
         }
-        console.log("original ",totalPaid)
-        console.log("discount amount",totalPaid * 0.2)
           await sendTicketEmail({
           to: user.email,
           userName: user.full_name || user.email,
@@ -302,7 +293,6 @@ export const getOrderDetails = async (req, res) => {
 
   try {
     const tickets = await findTicketsBySessionId(sessionId, userId);
-
     if (tickets.length === 0) {
       return res.status(404).json({ error: 'No tickets found for this order.' });
     }
@@ -327,7 +317,6 @@ export const getOrderDetails = async (req, res) => {
       }
       
     } catch (stripeError) {
-      console.error('Error fetching Stripe session:', stripeError);
       wasDiscountApplied = false;
       originalTotal = tickets.reduce((sum, ticket) => sum + ticket.tier.price, 0);
       discountedTotal = originalTotal;
@@ -495,7 +484,6 @@ export const processStripeRefund = async (ticket, amount) => {
       }
     });
   } catch (error) {
-    console.error('Stripe refund error:', error);
     throw new Error(`Payment processing failed: ${error.message}`);
   }
 };
@@ -505,7 +493,6 @@ export const refundTicket = async (req, res) => {
     const { ticketId } = req.params;
     const { ticket, tier } = await validateRefund(ticketId);
     const amountToRefund = await calculateRefundAmount(ticket);
-    console.log("amountToRefund",amountToRefund)
     const refund = await processStripeRefund(ticket, amountToRefund);
 
     await updateTicket(ticketId, {
@@ -548,7 +535,6 @@ export const refundTicket = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Refund failed:', error);
     res.status(400).json({ 
       success: false,
       error: error.message,
