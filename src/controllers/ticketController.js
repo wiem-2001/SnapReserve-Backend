@@ -12,6 +12,7 @@ import { create ,
 import {findTicketsById,reduceCapacity , findTier} from '../models/PricingTier.js';
 import {findUserById,updateFirstLoginGiftStatus} from '../models/UserModel.js';
 import { getEventById } from '../models/EventModel.js';
+import { addPoints, createUserPoints, getAllUserPoints, updateAvailableAmountDiscount } from '../models/pointsModel.js';
 import { stripe } from '../utils/stripe.js';
 import { sendTicketEmail , sendSuspiciousActivityEmail , sendRefundConfirmationEmail} from '../utils/mailer.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,7 +33,8 @@ export const getAvailableTierWithQuantity = async (tierId) => {
 export const createCheckoutSession = async (req, res) => {
   const { eventId, tierQuantities, date } = req.body; 
   const user = req.user;
-try {
+  const userId = req.user.id;
+  try {
     const isEligibleForDiscount = user.first_login_gift === true && 
                                  user.welcome_gift_expiry && 
                                  new Date() < user.welcome_gift_expiry;
@@ -72,8 +74,18 @@ try {
       return sum + price * quantity;
     }, 0);
 
-    const totalQuantity = tierQuantities.reduce((sum, t) => sum + t.quantity, 0);
+    const userPoints = await getAllUserPoints(userId);
+    let pointsDiscountToApply = 0;
+    
+    if (userPoints.availableDiscountAmount > 0) {
+      if (userPoints.availableDiscountAmount <= totalAmount) {
+        pointsDiscountToApply = userPoints.availableDiscountAmount;
+      } else {
+        pointsDiscountToApply = totalAmount;
+      }
+    }
 
+    const totalQuantity = tierQuantities.reduce((sum, t) => sum + t.quantity, 0);
     const lastTicket = await getLastUserTicket(user.id);
     let timeSinceLastPurchase = 24.0;
     if (lastTicket) {
@@ -91,8 +103,8 @@ try {
       if (prediction === -1) {
         if (req.user.email) {
           await sendSuspiciousActivityEmail(req.user.email);
-           const tierNames = validatedTiers.map(v => v.tier.name).join(', ');
-           const formattedDate = new Date(date).toLocaleDateString();
+          const tierNames = validatedTiers.map(v => v.tier.name).join(', ');
+          const formattedDate = new Date(date).toLocaleDateString();
 
           sendFraudAlert(user.id, {
             message: 'Transaction blocked due to suspicious activity',
@@ -100,7 +112,7 @@ try {
           });
           saveNotification(
             user.id,
-            `We noticed something unusual with your transaction for ${tierNames} tickets on ${formattedDate} and couldn’t complete it. ` +
+            `We noticed something unusual with your transaction for ${tierNames} tickets on ${formattedDate} and couldn't complete it. ` +
             'If you believe this was a mistake, please ignore this and try again. ' +
             'If not, we recommend securing your account and checking your credit card activity immediately.'
           );
@@ -112,17 +124,17 @@ try {
     } catch (error) {
       return res.status(500).json({ error: error.message });
     }
-    const userId = req.user.id
 
     const sessionMetadata = {
       userId,
       eventId,
       date,
       tierQuantities: JSON.stringify(tierQuantities),
-      wasWelcomeDiscountApplied: isEligibleForDiscount.toString()
+      wasWelcomeDiscountApplied: isEligibleForDiscount.toString(),
+      pointsDiscountAmount: pointsDiscountToApply.toString() 
     };
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionOptions = {
       payment_method_types: ['card'],
       line_items,
       mode: 'payment',
@@ -133,13 +145,22 @@ try {
         metadata: {
           userId,
           eventId,
-          wasWelcomeDiscountApplied: isEligibleForDiscount.toString()
+          wasWelcomeDiscountApplied: isEligibleForDiscount.toString(),
+          pointsDiscountAmount: pointsDiscountToApply.toString()
         }
       }
-    });
+    };
+
+    if (pointsDiscountToApply > 0) {
+      sessionOptions.discounts = [{
+        coupon: await createStripeCoupon(pointsDiscountToApply)
+      }];
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionOptions);
 
     if (isEligibleForDiscount) {
-     await updateFirstLoginGiftStatus(userId);
+      await updateFirstLoginGiftStatus(userId);
     }
 
     res.status(200).json({ url: session.url });
@@ -147,6 +168,15 @@ try {
     res.status(400).json({ error: err.message });
   }
 };
+
+async function createStripeCoupon(discountAmount) {
+  const coupon = await stripe.coupons.create({
+    amount_off: Math.round(discountAmount * 100),
+    currency: 'usd',
+    duration: 'once',
+  });
+  return coupon.id;
+}
 
 export const generateQrCodeData = async (text) => {
   
@@ -198,7 +228,7 @@ export const handleStripeWebhook = async (req, res) => {
     return res.json({ received: true });
   }
  
-  if (eventType === 'checkout.session.completed') {
+if (eventType === 'checkout.session.completed') {
     const session = event.data.object;
     const { userId, eventId, date, tierQuantities, wasWelcomeDiscountApplied } = session.metadata || {};
     if (session.payment_status === 'paid') {
@@ -213,12 +243,14 @@ export const handleStripeWebhook = async (req, res) => {
         const eventDate = event.dates[0];
         const createdTickets = [];
         const ticketsMap = new Map();
+        let totalTicketsPurchased = 0; 
 
         for (const { tierId, quantity } of tiers) {
           const tier = await findTier(tierId);
           if (!tier) { throw new Error('Pricing tier not found'); }
 
           await reduceCapacity(tier.id, quantity);
+          totalTicketsPurchased += quantity; 
 
           for (let i = 0; i < quantity; i++) {
             const ticketUUID = uuidv4();
@@ -254,27 +286,51 @@ export const handleStripeWebhook = async (req, res) => {
         }
 
         const ticketsToSend = Array.from(ticketsMap.values());
+        
+        const pointsEarned = totalTicketsPurchased * 10;
+        await addPoints(userId, pointsEarned, eventId, createdTickets[0]?.id); 
+
         let totalPaid = ticketsToSend.reduce((sum, t) => sum + t.price * t.quantity, 0);
-        const originalTotal = totalPaid
+        const originalTotal = totalPaid;
         const discountWasApplied = wasWelcomeDiscountApplied === 'true';
         
         if (discountWasApplied) {
           totalPaid = totalPaid * 0.8; 
         }
-          await sendTicketEmail({
+
+        const userPoints = await getAllUserPoints(userId);
+
+        let discountAmountLeft = userPoints.availableDiscountAmount || 0;
+        let pointsDiscountApplied = 0;
+
+        if (userPoints.availableDiscountAmount > 0) {
+          if (userPoints.availableDiscountAmount <= totalPaid) {
+            pointsDiscountApplied = userPoints.availableDiscountAmount;
+            totalPaid = totalPaid - pointsDiscountApplied;
+            discountAmountLeft = 0;
+          } else {
+            pointsDiscountApplied = totalPaid;
+            totalPaid = 0;
+            discountAmountLeft = userPoints.availableDiscountAmount - pointsDiscountApplied;
+          }
+         
+          await updateAvailableAmountDiscount(userId,discountAmountLeft);
+        }
+        await sendTicketEmail({
           to: user.email,
           userName: user.full_name || user.email,
           tickets: ticketsToSend,
           orderId: session.id,
           orderDate: new Date(),
           totalAmount: originalTotal,
-          wasDiscountApplied: discountWasApplied, 
-          originalTotal: discountWasApplied ? originalTotal : null, 
-          discountAmount: discountWasApplied ? totalPaid  : null 
+          wasDiscountApplied: discountWasApplied || pointsDiscountApplied > 0,
+          originalTotal: (discountWasApplied || pointsDiscountApplied > 0) ? originalTotal : null, 
+          welcomeDiscount: discountWasApplied ? originalTotal * 0.2 : 0,
+          pointsDiscount: pointsDiscountApplied,
+          finalAmount: totalPaid
         });
-
         if (discountWasApplied && user.first_login_gift === true) {
-          await updateFirstLoginGiftStatus(userId)
+          await updateFirstLoginGiftStatus(userId);
         }
 
       } catch (error) {
@@ -299,27 +355,38 @@ export const getOrderDetails = async (req, res) => {
 
     const firstTicket = tickets[0];
     
-    let wasDiscountApplied = false;
+    let wasWelcomeDiscountApplied = false;
+    let pointsDiscount = 0;
     let originalTotal = 0;
-    let discountedTotal = 0;
+    let finalAmount = 0;
+    const pointsEarned = tickets.length * 10;
     
     try {
       const stripeSession = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ['line_items.data.price.product'] 
       });
-      
-      wasDiscountApplied = stripeSession.metadata?.wasWelcomeDiscountApplied === 'true';
-      
+
+      wasWelcomeDiscountApplied = stripeSession.metadata?.wasWelcomeDiscountApplied === 'true';
+      pointsDiscount = parseFloat(stripeSession.metadata?.pointsDiscountAmount || '0');
       originalTotal = tickets.reduce((sum, ticket) => sum + ticket.tier.price, 0);
+      let tempAmount = originalTotal;
       
-      if (wasDiscountApplied) {
-        discountedTotal = originalTotal * 0.8; 
+      if (wasWelcomeDiscountApplied) {
+        tempAmount = tempAmount * 0.8; 
       }
       
+      if (pointsDiscount > 0) {
+        tempAmount = Math.max(0, tempAmount - pointsDiscount); 
+      }
+      
+      finalAmount = tempAmount;
+      
     } catch (stripeError) {
-      wasDiscountApplied = false;
+      console.error('Stripe session retrieval error:', stripeError);
       originalTotal = tickets.reduce((sum, ticket) => sum + ticket.tier.price, 0);
-      discountedTotal = originalTotal;
+      finalAmount = originalTotal;
+      wasWelcomeDiscountApplied = false;
+      pointsDiscount = 0;
     }
     const eventInfo = {
       id: firstTicket.event.id,
@@ -357,17 +424,20 @@ export const getOrderDetails = async (req, res) => {
 
     const items = Array.from(itemsMap.values());
     
-    const displayTotal = wasDiscountApplied ? discountedTotal : originalTotal;
+    const welcomeDiscount = wasWelcomeDiscountApplied ? originalTotal * 0.2 : 0;  
     const orderDetails = {
       orderId: sessionId,
       date: firstTicket.createdAt,
       email: req.user.email,
       event: eventInfo,
       items,
-      total: displayTotal, 
-      wasDiscountApplied, 
-      originalTotal: wasDiscountApplied ? originalTotal : null, 
-      discountAmount: wasDiscountApplied ? originalTotal * 0.2 : null 
+      total: finalAmount, 
+      finalAmount: finalAmount,
+      wasDiscountApplied: wasWelcomeDiscountApplied,
+      pointsDiscount: pointsDiscount,
+      welcomeDiscount: welcomeDiscount,
+      originalTotal: originalTotal,
+      pointsEarned: pointsEarned
     };
 
     res.json(orderDetails);

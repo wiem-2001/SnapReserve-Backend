@@ -15,22 +15,22 @@ datasource db {
 }
 
 model users {
-  id                     String    @id @default(cuid())
+  id                     String                 @id @default(cuid())
   full_name              String?
-  email                  String    @unique
-  password_hash          String? 
-  phone                  String? 
+  email                  String                 @unique
+  password_hash          String?
+  phone                  Int?
   role                   String
-  created_at             DateTime? @default(now())
-  updated_at             DateTime? @updatedAt
-  verification_token     String?   @db.Text
-  is_verified            Boolean?  @default(false)
+  created_at             DateTime?              @default(now())
+  updated_at             DateTime?              @updatedAt
+  verification_token     String?                @db.Text
+  is_verified            Boolean?               @default(false)
   password_reset_token   String?
   password_reset_expires DateTime?
   google_id              String?
   facebook_id            String?
   events                 events[]
-  profile_image          String? 
+  profile_image          String?
   gender                 String?
   birth_date             DateTime?
   tickets                Ticket[]
@@ -39,17 +39,18 @@ model users {
   favorites              Favorite[]
   devices                UserDevice[]
   suspiciousActivity     SuspiciousActivity[]
-  first_login_gift       Boolean      @default(true)
-  welcome_gift_expiry     DateTime?
-
+  first_login_gift       Boolean                @default(true)
+  welcome_gift_expiry    DateTime?
+  userPoints             UserPoints?
+  pointsHistory          PointsHistory[]
 }
 
 model UserDevice {
-  id        String   @id @default(cuid())
-  userId    String
-  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  device    String   
-  lastUsed  DateTime @default(now())
+  id       String   @id @default(cuid())
+  userId   String
+  user     users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device   String
+  lastUsed DateTime @default(now())
 }
 
 model SuspiciousActivity {
@@ -73,54 +74,55 @@ enum RefundType {
 }
 
 model events {
-  id            String           @id @default(cuid())
-  title         String
-  category      String
-  description   String
-  image         String
-  ownerId       String
-  owner         users           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  id          String @id @default(cuid())
+  title       String
+  category    String
+  description String
+  image       String
+  ownerId     String
+  owner       users  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  dates         eventDate[]      
-  tickets       Ticket[]
-  favorites     Favorite[]
+  dates     eventDate[]
+  tickets   Ticket[]
+  favorites Favorite[]
 
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  PointsHistory PointsHistory[]
 }
 
 model eventDate {
-  id            String   @id @default(cuid())
-  date          DateTime
-  location      String
-  eventId       String
-  event         events    @relation(fields: [eventId], references: [id] , onDelete: Cascade)
-  pricingTiers  pricingTier[]
+  id           String        @id @default(cuid())
+  date         DateTime
+  location     String
+  eventId      String
+  event        events        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  pricingTiers pricingTier[]
 }
 
 model pricingTier {
-  id            String    @id @default(cuid())
-  name          String
-  price         Float
-  capacity      Int       
-  dateId        String
-  eventDate     eventDate @relation(fields: [dateId], references: [id], onDelete: Cascade)
-  tickets       Ticket[]  
-  refundType    RefundType        @default(NO_REFUND)
-  refundDays    Int?
+  id               String     @id @default(cuid())
+  name             String
+  price            Float
+  capacity         Int
+  dateId           String
+  eventDate        eventDate  @relation(fields: [dateId], references: [id], onDelete: Cascade)
+  tickets          Ticket[]
+  refundType       RefundType @default(NO_REFUND)
+  refundDays       Int?
   refundPercentage Int?
 }
 
 model Ticket {
-  id              String        @id @default(uuid())
-  user            users         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId          String
+  id     String @id @default(uuid())
+  user   users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
 
-  event           events        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventId         String
+  event   events @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId String
 
-  tier            pricingTier   @relation(fields: [tierId], references: [id],onDelete: Cascade)
-  tierId          String
+  tier   pricingTier @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  tierId String
 
   date            DateTime
   stripeSessionId String?
@@ -128,44 +130,76 @@ model Ticket {
   qrCodeUrl       String?
   pdfUrl          String?
 
-  createdAt         DateTime      @default(now())
-  uuid              String   @unique
-  refundStatus      RefundStatus       ?       @default(NONE) 
+  createdAt         DateTime        @default(now())
+  uuid              String          @unique
+  refundStatus      RefundStatus?   @default(NONE)
   refundAmount      Float?
-  refundRequestDate DateTime?
   refundProcessDate DateTime?
+  PointsHistory     PointsHistory[]
 }
 
-  model FailedPaymentAttempt {
-    id        String   @id @default(cuid())
-    user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
-    userId    String
-    sessionId String   
-    eventId   String? 
-    reason    String?  
-    createdAt DateTime @default(now())
-  }
+model FailedPaymentAttempt {
+  id        String   @id @default(cuid())
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  sessionId String
+  eventId   String?
+  reason    String?
+  createdAt DateTime @default(now())
+}
 
 model Notification {
-  id        String      @id @default(uuid())
+  id        String   @id @default(uuid())
   userId    String
   message   String
   createdAt DateTime @default(now())
   read      Boolean  @default(false)
 
-  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model Favorite {
-  id       String   @id @default(cuid())
-  user     users    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId   String
-  event    events   @relation(fields: [eventId], references: [id],onDelete: Cascade)
-  eventId  String
+  id        String   @id @default(cuid())
+  user      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  event     events   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId   String
   createdAt DateTime @default(now())
 
-  @@unique([userId, eventId]) 
+  @@unique([userId, eventId])
 }
 
+model UserPoints {
+  id                String   @id @default(cuid())
+  userId            String
+  user              users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  availablePoints   Int      @default(0)
+  totalPointsEarned Int      @default(0)
+ availableDiscountAmount  Float    @default(0)
+  updatedAt         DateTime @updatedAt
+
+  @@unique([userId])
+}
+
+model PointsHistory {
+  id        String           @id @default(cuid())
+  userId    String
+  user      users            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    PointsActionType
+  points    Int
+  eventId   String?
+  event     events?          @relation(fields: [eventId], references: [id])
+  ticketId  String?
+  ticket    Ticket?          @relation(fields: [ticketId], references: [id])
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@index([userId, action])
+}
+
+enum PointsActionType {
+  EARNED
+  SPENT
+}

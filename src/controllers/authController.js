@@ -35,6 +35,7 @@ import { saveNotification } from '../controllers/notificationController.js';
 import { UAParser } from 'ua-parser-js';
 import { ticketcountByEventOwnerId } from "../models/TicketModel.js"
 import { differenceInDays } from 'date-fns';
+import { createUserPoints } from '../models/pointsModel.js';
 dotenv.config();
 
 function parseDeviceName(userAgent) {
@@ -121,6 +122,7 @@ export const signup = async (req, res) => {
       created_at: now,
       updated_at: now
     });
+    await createUserPoints(newUser.id);
 
     const JWT_SECRET = process.env.JWT_SECRET;
     const verificationToken = jwt.sign(
@@ -231,7 +233,6 @@ export const resendVerificationEmail = async (req, res) => {
       success: true,
       message: 'Verification email sent successfully. Please check your inbox.' 
     });
-    console.log("email was sent successfully")
   } catch (error) {
     console.error('Resend verification error:', error);
     res.status(500).json({ 
@@ -496,6 +497,7 @@ passport.use(new GoogleStrategy({
           created_at: new Date(),
           updated_at: new Date()
         });
+        await createUserPoints(user.id);
       }
     }
     
@@ -533,6 +535,7 @@ passport.use(new FacebookStrategy({
           created_at: new Date(),
           updated_at: new Date()
         });
+        await createUserPoints(user.id);
       }
     }
     return done(null, user);

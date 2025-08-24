@@ -116,7 +116,9 @@ export const sendTicketEmail = async ({
   totalAmount,
   wasDiscountApplied = false,
   originalTotal = null,
-  discountAmount = null 
+  welcomeDiscount = 0,
+  pointsDiscount = 0,
+  finalAmount = null
 }) => {
   const ticketsHtml = tickets.map(ticket => {
     const qrBlocks = ticket.qrCodeUrls.map((url, index) => `
@@ -176,22 +178,21 @@ ${ticket.asciiQRs[index]}
     `;
   }).join('');
 
-  const discountHtml = wasDiscountApplied ? `
-    <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 15px; margin: 20px 0;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <span style="font-weight: bold; color: #52c41a;">
-          🎉 20% Welcome Discount Applied! 
-        </span>
-        <span style="color: #52c41a; font-weight: bold;">
-          -You payed $${discountAmount.toFixed(2)}
-        </span>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; color: #666;">
-        <span>Original Price:</span>
-        <span style="text-decoration: line-through;">$${originalTotal.toFixed(2)}</span>
-      </div>
+  const totalSavings = welcomeDiscount + pointsDiscount;
+  const hadAnyDiscount = welcomeDiscount > 0 || pointsDiscount > 0;
+
+ const discountHtml = hadAnyDiscount ? `
+  <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 15px; margin: 20px 0;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-weight: bold; color: #021529;">Original Price:</span>
+      <span style="text-decoration: line-through; color: #999;">$${originalTotal.toFixed(2)}</span>
     </div>
-  ` : '';
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-weight: bold; color: #52c41a; font-size: 16px;">Final Amount Paid:</span>
+      <span style="color: #52c41a; font-weight: bold; font-size: 16px;">$${finalAmount.toFixed(2)}</span>
+    </div>
+  </div>
+` : '';
 
   const mailOptions = {
     from: `"SnapReserve" <${process.env.EMAIL_USER}>`,
@@ -220,9 +221,17 @@ ${ticket.asciiQRs[index]}
           
           <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
             <p style="font-weight: bold; font-size: 16px; color: #021529; text-align: right;">
-              Total Paid: $${totalAmount.toFixed(2)}
+              Final Amount Paid: $${finalAmount.toFixed(2)}
             </p>
           </div>
+          
+          ${pointsDiscount > 0 ? `
+            <div style="margin-top: 15px; padding: 12px; background: #f0f5ff; border-radius: 6px;">
+              <p style="margin: 0; color: #021529; font-size: 14px;">
+                <strong> Points Used:</strong> You redeemed $${pointsDiscount.toFixed(2)} from your rewards balance.
+              </p>
+            </div>
+          ` : ''}
         </div>
         <div style="background-color: #f5f5f5; padding: 10px; text-align: center; font-size: 12px; color: #999;">
           &copy; ${new Date().getFullYear()} SnapReserve. All rights reserved.
