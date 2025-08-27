@@ -128,7 +128,7 @@ export const signup = async (req, res) => {
     const verificationToken = jwt.sign(
       { userId: newUser.id, email: newUser.email },
       JWT_SECRET,
-      { expiresIn: '1d' }
+      { expiresIn: '1s' }
     );
 
     await updateUserVerificationToken(newUser.id, verificationToken);
