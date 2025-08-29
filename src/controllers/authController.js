@@ -130,7 +130,7 @@ export const signup = async (req, res) => {
       JWT_SECRET,
       { expiresIn: '1d' }
     );
-
+    
     await updateUserVerificationToken(newUser.id, verificationToken);
     await sendVerificationEmail(newUser.email, verificationToken);
     
