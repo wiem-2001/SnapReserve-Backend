@@ -152,7 +152,6 @@ export const verifyEmail = async (req, res) => {
   try {
     const JWT_SECRET = process.env.JWT_SECRET;
     let decoded;
-    
     try {
       decoded = jwt.verify(token, JWT_SECRET);
     } catch (jwtError) {
@@ -165,7 +164,6 @@ export const verifyEmail = async (req, res) => {
       }
     }
     const user = await findUserByVerificationToken(token);
-
     if (user.is_verified) {
       return res.redirect(`${process.env.FRONTEND_URL}/verified`);
     }
@@ -178,7 +176,6 @@ export const verifyEmail = async (req, res) => {
     
     res.redirect(`${process.env.FRONTEND_URL}/verified`);
   } catch (error) {
-    console.error('Verification error:', error);
     res.redirect(`${process.env.FRONTEND_URL}/verify-expired?message=Server error during verification`);
   }
 };
@@ -234,7 +231,6 @@ export const resendVerificationEmail = async (req, res) => {
       message: 'Verification email sent successfully. Please check your inbox.' 
     });
   } catch (error) {
-    console.error('Resend verification error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error while processing your request. Please try again later.' 
@@ -627,9 +623,7 @@ export const deleteUser = async (req, res) => {
         message: "Cannot delete account: tickets have been sold for your events.",
       });
     }
-
     await deleteUserById(userId);
-
     res.clearCookie('token', { httpOnly: true });
     res.status(200).json({ message: 'Account and related data deleted successfully.' });
 

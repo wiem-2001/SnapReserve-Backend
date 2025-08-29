@@ -11,7 +11,6 @@ import { getAllUserPoints , getPointsHistory,redeemPoints} from "../models/point
         message: first_login_gift ? 'User is eligible for welcome gift' : 'User has already claimed welcome gift'
       });
     } catch (error) {
-      console.error('Error checking scratch card eligibility:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   };
