@@ -80,13 +80,13 @@ export const redeemPoints = async (userId, points, redemptionId,discountAmount) 
 
 export const addPoints = async (userId, points, eventId , ticketId ) => {
   try {
-      const userPoints = await prisma.userPoints.update({
-        where: { userId },
-        data: {
-          availablePoints: userPoints.availablePoints + points,
-          totalPointsEarned: userPoints.totalPointsEarned + points,
-        },
-      });
+        const userPoints = await prisma.userPoints.update({
+      where: { userId },
+      data: {
+        availablePoints: { increment: points },
+        totalPointsEarned: { increment: points },
+      },
+    });
     
     const pointsHistory = await prisma.pointsHistory.create({
       data: {
